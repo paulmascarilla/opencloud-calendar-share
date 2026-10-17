@@ -1,0 +1,60 @@
+# Run manually (Actions > tag > Run workflow) on main to release:
+# computes the next version from the Conventional Commits since the latest tag, prepends its section to
+# CHANGELOG.md, commits it, tags vX.Y.Z and starts the release workflow for that tag.
+name: tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump (auto = from commit types)
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      dry-run:
+        description: Only show the version and the changelog
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tag
+
+jobs:
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Next version and changelog
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version=$(.github/scripts/changelog.sh version "$BUMP")
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          .github/scripts/changelog.sh notes "$version" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Update CHANGELOG.md, commit and tag
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            sed -n '1,/^## /{/^## /!p}' CHANGELOG.md
+            cat "$RUNNER_TEMP/notes.md"
+            echo
+            sed -n '/^## /,$p' CHANGELOG.md
+          } > "$RUNNER_TEMP/CHANGELOG.md"
+          mv "$RUNNER_TEMP/CHANGELOG.md" CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release v$VERSION"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push --atomic origin HEAD:main "v$VERSION"
+          # Tags pushed with GITHUB_TOKEN don't trigger workflows: start the release explicitly.
+          gh workflow run release.yaml --ref "v$VERSION"
