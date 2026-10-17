@@ -1,0 +1,28 @@
+# Strategic-merge patch for the opencloud Deployment: installs the
+# calendar Web extension into WEB_ASSET_APPS_PATH via an init container.
+#   kubectl -n opencloud patch deploy opencloud --patch-file k8s/opencloud-web-extension-patch.yaml
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: web-app-calendar
+          image: localhost/web-app-calendar:0.7.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TARGET
+              value: /web/apps/calendar
+          volumeMounts:
+            - name: web-apps
+              mountPath: /web/apps
+      containers:
+        - name: opencloud
+          env:
+            - name: WEB_ASSET_APPS_PATH
+              value: /web/apps
+          volumeMounts:
+            - name: web-apps
+              mountPath: /web/apps
+              readOnly: true
+      volumes:
+        - name: web-apps
+          emptyDir: {}

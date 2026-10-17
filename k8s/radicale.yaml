@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radicale
+  namespace: opencloud
+spec:
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: radicale
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: radicale
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      containers:
+        - name: radicale
+          image: docker.io/opencloudeu/radicale:v3.8.1
+          ports:
+            - name: http
+              containerPort: 5232
+          livenessProbe:
+            tcpSocket:
+              port: 5232
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 5232
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/radicale
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/radicale
+        # Sidecar: REST API de partage d'agendas, expose via le proxy OpenCloud (/calshare/)
+        - name: calshare
+          image: localhost/calshare:0.4.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RADICALE_URL
+              value: http://127.0.0.1:5232
+            - name: OC_URL
+              value: https://opencloud:9200
+            - name: OC_INSECURE
+              value: "true"
+            - name: AUTO_ACCEPT
+              value: "true"
+            # Links in invitation copies (Accept / Maybe / Decline) point to the web app here
+            - name: PUBLIC_URL
+              value: https://localhost:9200
+            - name: INVITE_LANGUAGE
+              value: fr
+            # Plain OpenCloud user (calshare-bot) used to resolve e-mail guests of events created
+            # in CalDAV clients. Secret created with:
+            #   opencloud auth-app create --user-name=calshare-bot --expiration=8760h
+            #   kubectl -n opencloud create secret generic calshare-service --from-literal=auth=calshare-bot:<token>
+            - name: OC_SERVICE_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: calshare-service
+                  key: auth
+          ports:
+            - name: share
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Index of invitations (calshare/) and catch-up scan of the collections.
+            - name: data
+              mountPath: /var/lib/radicale
+      volumes:
+        - name: config
+          configMap:
+            name: radicale-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: radicale-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radicale
+  namespace: opencloud
+spec:
+  selector:
+    app: radicale
+  ports:
+    - name: http
+      port: 5232
+      targetPort: 5232
+    - name: share
+      port: 8080
+      targetPort: 8080

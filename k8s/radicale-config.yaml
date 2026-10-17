@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: radicale-config
+  namespace: opencloud
+data:
+  config: |
+    [server]
+    hosts = 0.0.0.0:5232
+
+    [auth]
+    type = http_x_remote_user
+
+    [rights]
+    # Chacun ne voit que ses propres carnets et agendas
+    type = owner_only
+
+    [storage]
+    filesystem_folder = /var/lib/radicale/collections
+    # Previent le sidecar calshare de chaque ecriture (invitations a des evenements).
+    # Execute pendant le verrou d'ecriture : wget ne fait que notifier (timeout 1 s).
+    hook = wget -q -T 1 -O /dev/null --post-data= --header=X-Calshare-Request:%(request)s --header=X-Calshare-Path:%(path)s --header=X-Calshare-To:%(to_path)s http://127.0.0.1:8080/internal/storage-changed
+    # Collections creees a la premiere connexion de chaque utilisateur (et
+    # seulement la : les modifier ici ne touche pas les comptes existants).
+    # Evenements et taches separes : iOS et Thunderbird gerent mal un
+    # calendrier qui melange les deux. Les clients peuvent en creer d'autres
+    # (MKCALENDAR), Radicale l'accepte.
+    predefined_collections = {
+        "def-addressbook": {
+           "D:displayname": "Contacts",
+           "tag": "VADDRESSBOOK"
+        },
+        "def-calendar": {
+           "C:supported-calendar-component-set": "VEVENT",
+           "D:displayname": "Agenda",
+           "ICAL:calendar-color": "#3b82f6",
+           "tag": "VCALENDAR"
+        },
+        "def-tasks": {
+           "C:supported-calendar-component-set": "VTODO",
+           "D:displayname": "Tâches",
+           "ICAL:calendar-color": "#f59e0b",
+           "tag": "VCALENDAR"
+        }
+      }
+
+    [sharing]
+    # Partage d'agendas entre utilisateurs (pilote par le sidecar calshare).
+    # La base des partages vit sur le PVC : collections/collection-db/files
+    type = files
+    collection_by_map = true
+    collection_by_token = false
+    permit_create_map = true
+
+    [web]
+    type = none
