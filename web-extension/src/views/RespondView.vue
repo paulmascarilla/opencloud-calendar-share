@@ -84,6 +84,10 @@
           {{ $gettext('Open in the calendar') }}
         </oc-button>
       </div>
+
+      <div class="ext:flex ext:justify-center ext:mt-4">
+        <source-link />
+      </div>
     </div>
   </div>
 </template>
@@ -96,6 +100,7 @@ import { EventInstance, useCaldav } from '../composables/useCaldav'
 import { apiErrorMessage, useCalshare } from '../composables/useCalshare'
 import type { GuestResponse } from '../ical'
 import GuestList from '../components/GuestList.vue'
+import SourceLink from '../components/SourceLink.vue'
 
 type Answer = Exclude<GuestResponse, 'pending'>
 const ANSWERS: Answer[] = ['accepted', 'tentative', 'declined']

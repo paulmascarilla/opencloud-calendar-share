@@ -50,6 +50,8 @@
       <oc-icon name="share" size="small" />
       {{ $gettext('Manage sharing') }}
     </oc-button>
+
+    <source-link class="ext:mt-2" />
   </nav>
 </template>
 
@@ -57,6 +59,7 @@
 import { computed } from 'vue'
 import { useGettext } from 'vue3-gettext'
 import { CalendarSource } from '../composables/useCaldav'
+import SourceLink from './SourceLink.vue'
 import { useUserDirectory } from '../composables/useUserDirectory'
 
 const props = defineProps<{

@@ -145,6 +145,8 @@
     "Name": "Nom",
     "New calendar": "Nouvel agenda",
     "New invitation": "Nouvelle invitation",
-    "Open the calendar": "Ouvrir l'agenda"
+    "Open the calendar": "Ouvrir l'agenda",
+    "Source code": "Code source",
+    "Source code of this app (%{license})": "Code source de cette application (%{license})"
   }
 }

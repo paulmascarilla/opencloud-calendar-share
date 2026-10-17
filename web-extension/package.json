@@ -1,6 +1,6 @@
 {
   "name": "web-app-calendar",
-  "version": "0.7.1",
+  "version": "0.1.0",
   "private": true,
   "description": "OpenCloud Web calendar: CalDAV events (Radicale) and calendar sharing between users",
   "license": "AGPL-3.0",
