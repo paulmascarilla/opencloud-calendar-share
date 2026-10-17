@@ -1,0 +1,45 @@
+:root {
+  /* OpenCloud design system color roles (light theme) */
+  --bg: #F6F8FA;            /* surface-container */
+  --ink: #191C1D;           /* on-surface */
+  --ink2: #40484C;          /* on-surface-variant */
+  --ink3: #70787C;          /* outline */
+  --hair: rgba(25, 28, 29, 0.12);
+  --accent: #00677F;        /* primary */
+  --accentSoft: #CFE6F1;    /* secondary-container */
+  --chrome: #20434F;        /* chrome */
+  --winBg: #FFFFFF;         /* surface */
+  --side: #ECEEF0;          /* surface-container-highest: browser bar */
+  --wall1: #F6F8FA;
+  --wall2: #ECEEF0;
+  --menuBg: rgba(255, 255, 255, 0.55);
+  --menuInk: #191C1D;
+  --dockBg: rgba(255, 255, 255, 0.42);
+  --tile0: #D9D4CB;
+  --tile1: #C9CFD8;
+  --tile2: #E2DDD5;
+  --metal1: #D7D8DB;
+  --metal2: #A7AAB0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+}
+
+#stage { position: relative; overflow: hidden; background: var(--bg); contain: strict; }
+
+.cam { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.full { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.abs { position: absolute; }
+.row { display: flex; align-items: center; }
+.center { display: flex; align-items: center; justify-content: center; }
+.mask { overflow: hidden; }
+.t { display: inline-block; white-space: nowrap; line-height: 1.3; vertical-align: top; }
+i { display: block; font-style: normal; }

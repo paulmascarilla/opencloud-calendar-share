@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>OpenCloud Calendar Share</title>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="#20434F"/>
+  <rect x="88" y="56" width="120" height="120" rx="22" fill="#CFE6F1"/>
+  <rect x="48" y="84" width="120" height="120" rx="22" fill="#FFFFFF"/>
+  <path d="M48 120V106a22 22 0 0 1 22-22h76a22 22 0 0 1 22 22v14z" fill="#00677F"/>
+  <rect x="74" y="70" width="12" height="28" rx="6" fill="#FFFFFF"/>
+  <rect x="130" y="70" width="12" height="28" rx="6" fill="#FFFFFF"/>
+  <rect x="68" y="140" width="80" height="18" rx="9" fill="#00677F"/>
+  <rect x="68" y="168" width="48" height="18" rx="9" fill="#CFE6F1"/>
+</svg>
