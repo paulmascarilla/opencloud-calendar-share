@@ -1,0 +1,10 @@
+version: "2"
+
+linters:
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Test fixtures and fake servers: a failed write shows up as a failed assertion.
+      - path: _test\.go
+        linters: [errcheck]
