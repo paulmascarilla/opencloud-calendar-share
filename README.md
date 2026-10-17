@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/icon.svg" alt="" width="128" height="128"></p>
+
 # opencloud-calendar-share
 
 Calendars for [OpenCloud](https://opencloud.eu), on top of [Radicale](https://radicale.org) (CalDAV/CardDAV):
