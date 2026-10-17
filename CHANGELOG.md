@@ -2,6 +2,12 @@
 
 Generated from the Conventional Commits by the `tag` workflow (`.github/workflows/tag.yaml`).
 
+## [0.2.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.1.0...v0.2.0) (2026-10-17)
+
+### Features
+
+- update app icon (#1) ([226f348](https://github.com/paulmascarilla/opencloud-calendar-share/commit/226f3488352764bfb8f3cf4dbff27e92907079c7))
+
 ## 0.1.0 (2026-10-17)
 
 ### Features
