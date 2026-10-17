@@ -1,0 +1,118 @@
+# Push a tag "vX.Y.Z" to publish:
+#   ghcr.io/<owner>/opencloud-calendar-share/calshare:X.Y.Z   (linux/amd64, linux/arm64)
+#   ghcr.io/<owner>/opencloud-calendar-share/web:X.Y.Z
+#   oci://ghcr.io/<owner>/charts/opencloud-calendar-share  version X.Y.Z
+#   a GitHub release with the web extension zip, the chart package and the Compose overlay
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: calshare
+            context: sidecar
+          - name: web
+            context: web-extension
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name (lower-case owner)
+        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/opencloud-calendar-share/${{ matrix.name }}" >> "$GITHUB_ENV"
+      - name: Extension version = tag (shown in OpenCloud's manifest.json)
+        if: matrix.name == 'web'
+        run: |
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${GITHUB_REF_NAME#v}\"/" web-extension/package.json
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  chart-and-release:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version from tag
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: azure/setup-helm@v4
+      - name: Package the chart (version = appVersion = tag, images of this owner)
+        run: |
+          chart=charts/opencloud-calendar-share
+          sed -i "s/^version: .*/version: ${VERSION}/; s/^appVersion: .*/appVersion: \"${VERSION}\"/" $chart/Chart.yaml
+          sed -i "s#ghcr.io/paulmascarilla/#ghcr.io/${OWNER}/#g" $chart/values.yaml
+          helm lint $chart
+          helm package $chart --destination dist
+      - name: Push the chart to ghcr (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${REGISTRY} -u "${{ github.actor }}" --password-stdin
+          helm push dist/opencloud-calendar-share-${VERSION}.tgz oci://${REGISTRY}/${OWNER}/charts
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web-extension/pnpm-lock.yaml
+      - name: Web extension zip (drop into OpenCloud's apps directory)
+        working-directory: web-extension
+        run: |
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
+          pnpm install --frozen-lockfile
+          pnpm build
+          mkdir -p ../dist/zip && cp -R dist ../dist/zip/calendar
+          cp ../LICENSE ../dist/zip/calendar/LICENSE
+          (cd ../dist/zip && zip -qr ../calendar-${VERSION}.zip calendar)
+      - name: Compose overlay (images of this owner, version = tag)
+        run: |
+          sed -e "s#ghcr.io/paulmascarilla/opencloud-calendar-share#ghcr.io/${OWNER}/opencloud-calendar-share#" \
+              -e "s/CALENDAR_VERSION:-[^}]*}/CALENDAR_VERSION:-${VERSION}}/" deploy/compose/calendar.yml > dist/calendar.yml
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/opencloud-calendar-share-${{ env.VERSION }}.tgz
+            dist/calendar-${{ env.VERSION }}.zip
+            dist/calendar.yml
+          body: |
+            ```sh
+            helm install calendar oci://ghcr.io/${{ env.OWNER }}/charts/opencloud-calendar-share --version ${{ env.VERSION }} -n opencloud
+            ```
+            Images: `ghcr.io/${{ env.OWNER }}/opencloud-calendar-share/calshare:${{ env.VERSION }}`,
+            `ghcr.io/${{ env.OWNER }}/opencloud-calendar-share/web:${{ env.VERSION }}`.
+            The web extension zip unpacks to `calendar/` for OpenCloud's apps directory (WEB_ASSET_APPS_PATH).
+            `calendar.yml` is the overlay for [opencloud-compose](https://github.com/opencloud-eu/opencloud-compose)
+            (see docs/installation.md#docker-compose).

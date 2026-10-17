@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sidecar/go.mod
+      - name: Vet and test
+        working-directory: sidecar
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -race ./...
+
+  web-extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web-extension/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:types
+      - run: pnpm build
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint charts/opencloud-calendar-share --set opencloud.patch.enabled=true --set networkPolicy.enabled=true
+      - run: helm template t charts/opencloud-calendar-share --set opencloud.patch.enabled=true > /dev/null
+
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [sidecar, web-extension]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component }}
+          push: false
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the overlay on top of opencloud-compose
+        run: |
+          git clone -q --depth 1 https://github.com/opencloud-eu/opencloud-compose /tmp/oc
+          mkdir /tmp/oc/calendar && cp deploy/compose/calendar.yml /tmp/oc/calendar/
+          cd /tmp/oc && CALENDAR_PROXY_SECRET=ci docker compose -f docker-compose.yml -f calendar/calendar.yml config -q
