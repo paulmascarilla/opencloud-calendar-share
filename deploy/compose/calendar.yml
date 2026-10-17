@@ -1,0 +1,166 @@
+---
+# opencloud-calendar-share for opencloud-compose (https://github.com/opencloud-eu/opencloud-compose):
+# Radicale (CalDAV/CardDAV) + the calshare sidecar, the proxy routes and the "calendar" web extension.
+#
+# Use it INSTEAD of radicale/radicale.yml (same data volume, so existing calendars are kept):
+#   COMPOSE_FILE=docker-compose.yml:traefik/opencloud.yml:calendar/calendar.yml
+#   CALENDAR_PROXY_SECRET=<openssl rand -hex 32>
+# See docs/installation.md#docker-compose. Needs Docker Compose 2.23.1+ (inline configs).
+services:
+  opencloud:
+    depends_on:
+      calendar-web:
+        condition: service_completed_successfully
+    networks:
+      calendar-net:
+    volumes:
+      # a sub-folder of the apps directory: other extensions are left alone
+      - calendar-web:/var/lib/opencloud/web/assets/apps/calendar:ro
+    configs:
+      # replaces config/opencloud/proxy.yaml: add your own routes to calendar-proxy below
+      - source: calendar-proxy
+        target: /etc/opencloud/proxy.yaml
+
+  radicale:
+    image: ${RADICALE_DOCKER_IMAGE:-opencloudeu/radicale}:${RADICALE_DOCKER_TAG:-v3.8.1}
+    user: ${OC_CONTAINER_UID_GID:-1000:1000}
+    # Localhost only: clients go through calshare's CalDAV gate, which checks the proxy secret.
+    command: ["--hosts", "127.0.0.1:5232"]
+    networks:
+      # calshare shares this network namespace (like the containers of a pod)
+      calendar-net:
+        aliases: [calshare]
+    configs:
+      - source: calendar-radicale
+        target: /etc/radicale/config
+    volumes:
+      - ${RADICALE_DATA_DIR:-radicale-data}:/var/lib/radicale
+    # not read_only: Compose copies inline configs into the container
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "5232"]
+      interval: 15s
+    logging:
+      driver: ${LOG_DRIVER:-local}
+    restart: always
+
+  calshare:
+    image: ${CALENDAR_IMAGE_PREFIX:-ghcr.io/paulmascarilla/opencloud-calendar-share}/calshare:${CALENDAR_VERSION:-0.1.0}
+    user: ${OC_CONTAINER_UID_GID:-1000:1000}
+    network_mode: service:radicale
+    depends_on: [radicale]
+    environment:
+      RADICALE_URL: http://127.0.0.1:5232
+      OC_URL: ${CALENDAR_OPENCLOUD_URL:-http://opencloud:9200}
+      OC_INSECURE: ${INSECURE:-false}
+      AUTO_ACCEPT: ${CALENDAR_AUTO_ACCEPT:-true}
+      PUBLIC_URL: https://${OC_DOMAIN:-cloud.opencloud.test}${TRAEFIK_PORT_HTTPS:+:}${TRAEFIK_PORT_HTTPS:-}
+      INVITE_LANGUAGE: ${CALENDAR_LANGUAGE:-en}
+      CALDAV_LISTEN: 0.0.0.0:5233
+      PROXY_SECRET: ${CALENDAR_PROXY_SECRET:?set CALENDAR_PROXY_SECRET in .env (openssl rand -hex 32)}
+      # "user:app-token" of a plain OpenCloud user: invitations created in CalDAV clients (optional)
+      OC_SERVICE_AUTH: ${CALENDAR_SERVICE_AUTH:-}
+    volumes:
+      # invitation index + catch-up scan of the collections
+      - ${RADICALE_DATA_DIR:-radicale-data}:/var/lib/radicale
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "/calshare", "check", "http://127.0.0.1:8080/healthz", "127.0.0.1:5233"]
+      interval: 15s
+    logging:
+      driver: ${LOG_DRIVER:-local}
+    restart: always
+
+  # Copies the web extension into the calendar-web volume, then exits.
+  calendar-web:
+    image: ${CALENDAR_IMAGE_PREFIX:-ghcr.io/paulmascarilla/opencloud-calendar-share}/web:${CALENDAR_VERSION:-0.1.0}
+    environment:
+      TARGET: /web-apps
+    network_mode: none
+    volumes:
+      - calendar-web:/web-apps
+    logging:
+      driver: ${LOG_DRIVER:-local}
+    restart: "no"
+
+configs:
+  # proxy.yaml for OpenCloud: routes CalDAV/CardDAV to Radicale (through calshare's gate) and
+  # /calshare/ to the sidecar. The OpenCloud proxy authenticates the user, passes their id in
+  # X-Remote-User and adds the secret calshare checks.
+  calendar-proxy:
+    content: |
+      additional_policies:
+        - name: default
+          routes:
+            # same as opencloud-compose's config/opencloud/proxy.yaml (yjs/yjs.yml)
+            - endpoint: /yjs
+              backend: http://yjs:1234
+              unprotected: true
+            - endpoint: /caldav/
+              backend: http://calshare:5233
+              remote_user_header: X-Remote-User
+              skip_x_access_token: true
+              additional_headers: { X-Script-Name: /caldav, X-Calshare-Secret: "${CALENDAR_PROXY_SECRET}" }
+            - endpoint: /.well-known/caldav
+              backend: http://calshare:5233
+              remote_user_header: X-Remote-User
+              skip_x_access_token: true
+              additional_headers: { X-Script-Name: /caldav, X-Calshare-Secret: "${CALENDAR_PROXY_SECRET}" }
+            - endpoint: /carddav/
+              backend: http://calshare:5233
+              remote_user_header: X-Remote-User
+              skip_x_access_token: true
+              additional_headers: { X-Script-Name: /carddav, X-Calshare-Secret: "${CALENDAR_PROXY_SECRET}" }
+            - endpoint: /.well-known/carddav
+              backend: http://calshare:5233
+              remote_user_header: X-Remote-User
+              skip_x_access_token: true
+              additional_headers: { X-Script-Name: /carddav, X-Calshare-Secret: "${CALENDAR_PROXY_SECRET}" }
+            - endpoint: /calshare/
+              backend: http://calshare:8080
+              remote_user_header: X-Remote-User
+              skip_x_access_token: true
+              additional_headers: { X-Calshare-Secret: "${CALENDAR_PROXY_SECRET}" }
+
+  calendar-radicale:
+    content: |
+      [server]
+      # Only calshare's CalDAV gate (same network namespace) talks to Radicale.
+      hosts = 127.0.0.1:5232
+
+      [auth]
+      # The OpenCloud proxy authenticates users and passes their id in X-Remote-User.
+      type = http_x_remote_user
+
+      [rights]
+      type = owner_only
+
+      [storage]
+      filesystem_folder = /var/lib/radicale/collections
+      # Tells the calshare sidecar about every write (event invitations). Runs inside the
+      # write lock, so it only notifies (1 s timeout); the sidecar does the work afterwards.
+      hook = wget -q -T 1 -O /dev/null --post-data= --header=X-Calshare-Request:%(request)s --header=X-Calshare-Path:%(path)s --header=X-Calshare-To:%(to_path)s http://127.0.0.1:8080/internal/storage-changed
+      predefined_collections = {"def-addressbook":{"D:displayname":"Contacts","tag":"VADDRESSBOOK"},"def-calendar":{"C:supported-calendar-component-set":"VEVENT","D:displayname":"Calendar","ICAL:calendar-color":"#3b82f6","tag":"VCALENDAR"},"def-tasks":{"C:supported-calendar-component-set":"VTODO","D:displayname":"Tasks","ICAL:calendar-color":"#f59e0b","tag":"VCALENDAR"}}
+
+      [sharing]
+      # Calendar sharing between users (driven by calshare)
+      type = files
+      collection_by_map = true
+      collection_by_token = false
+      permit_create_map = true
+
+      [web]
+      type = none
+
+volumes:
+  radicale-data:
+  calendar-web:
+
+networks:
+  # Only OpenCloud and the calendar containers: they trust the X-Remote-User header the OpenCloud
+  # proxy sets (the proxy secret is a second layer).
+  calendar-net:
+    internal: true
