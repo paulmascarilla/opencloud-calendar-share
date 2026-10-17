@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tar
+*.tgz
+# test credentials (app tokens)
+tokens*.env
+# module federation build cache
+.__mf__temp/
+# local sidecar build
+sidecar/sidecar
