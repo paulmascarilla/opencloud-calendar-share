@@ -62,10 +62,19 @@ The browser tests target the week of 19–25 Oct 2026.
 
 ## Release
 
-Push a tag `vX.Y.Z`. `.github/workflows/release.yaml` then:
+Run the `tag` workflow on `main` (Actions → tag → Run workflow, or `gh workflow run tag.yaml`). It picks the next
+version from the commits since the latest tag (breaking change: major, or minor before 1.0.0; `feat`: minor; anything
+else: patch), unless you choose the bump. It then prepends the changelog to `CHANGELOG.md`, commits
+`chore: release vX.Y.Z`, tags `vX.Y.Z` and starts the release. With `dry-run`, it only shows the version and the
+changelog in the run summary. Preview locally with `.github/scripts/changelog.sh version` and
+`.github/scripts/changelog.sh notes <version>`.
+
+Pushing a tag `vX.Y.Z` by hand also works. `.github/workflows/release.yaml` then:
 - publishes both images (linux/amd64 + arm64);
 - pushes the chart (version = tag) to `oci://ghcr.io/<owner>/charts`;
-- creates a GitHub release with the chart, the web extension zip and the Compose overlay (`calendar.yml`, version = tag).
+- creates a GitHub release, with the changelog since the previous tag as notes, with the chart, the web extension zip and the Compose overlay (`calendar.yml`, version = tag).
 
 `.github/workflows/ci.yaml` checks every push: sidecar (gofmt, vet, tests), type-check and build of the extension, chart lint,
 Compose overlay (`docker compose config` on top of opencloud-compose), image builds.
+`.github/workflows/lint.yaml` runs on pull requests and pushes to `main`: commit messages and pull request title
+(Conventional Commits), yamllint, golangci-lint, ESLint and ShellCheck.
