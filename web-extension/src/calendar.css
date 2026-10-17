@@ -1,0 +1,299 @@
+/*
+ * FullCalendar themed with the OpenCloud design system color roles (--oc-role-*),
+ * so the calendar follows light/dark mode and custom themes. Scoped to .oc-calendar.
+ */
+.oc-calendar {
+  --fc-border-color: color-mix(in srgb, var(--oc-role-outline-variant) 70%, transparent);
+  --fc-page-bg-color: var(--oc-role-surface);
+  --fc-neutral-bg-color: var(--oc-role-surface-container-low);
+  --fc-list-event-hover-bg-color: var(--oc-role-surface-container-high);
+  --fc-today-bg-color: transparent;
+  --fc-highlight-color: color-mix(in srgb, var(--oc-role-primary) 12%, transparent);
+  --fc-now-indicator-color: var(--oc-role-on-surface-variant);
+  color: var(--oc-role-on-surface);
+}
+.oc-calendar .fc a {
+  color: inherit;
+  text-decoration: none;
+}
+/* the card already has a border */
+.oc-calendar .fc-theme-standard .fc-scrollgrid {
+  border: 0;
+}
+.oc-calendar .fc-theme-standard td:last-child,
+.oc-calendar .fc-theme-standard th:last-child {
+  border-right: 0;
+}
+
+/* --- column headers: "lun. 12", today in a pill ------------------------------------ */
+.oc-calendar .fc .fc-col-header-cell {
+  padding: 0.55rem 0;
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .fc-col-header-cell-cushion {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.oc-calendar .oc-day-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.3rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  color: var(--oc-role-on-surface);
+}
+.oc-calendar .oc-day-num.is-today {
+  background: var(--oc-role-on-surface);
+  color: var(--oc-role-surface);
+}
+/* month view: today's date number */
+.oc-calendar .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  background: var(--oc-role-on-surface);
+  color: var(--oc-role-surface);
+  border-radius: 9999px;
+  min-width: 1.6rem;
+  text-align: center;
+  font-weight: 600;
+}
+.oc-calendar .fc .fc-daygrid-day-number {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  margin: 0.15rem;
+}
+
+/* --- time grid ------------------------------------------------------------------------ */
+.oc-calendar .fc .fc-timegrid-slot {
+  height: 2.75rem;
+}
+.oc-calendar .fc .fc-timegrid-slot-minor {
+  border-top-color: transparent;
+}
+.oc-calendar .fc .fc-timegrid-slot-label {
+  vertical-align: top;
+  border-top-color: transparent;
+}
+.oc-calendar .fc .fc-timegrid-slot-label-cushion,
+.oc-calendar .fc .fc-timegrid-axis-cushion {
+  font-size: 0.72rem;
+  color: var(--oc-role-on-surface-variant);
+  transform: translateY(-0.55em);
+  padding-right: 0.6rem;
+}
+.oc-calendar .fc .fc-timegrid-axis-cushion {
+  transform: none;
+  max-width: 4.5rem;
+  text-align: center;
+  line-height: 1.15;
+}
+.oc-calendar .fc .fc-timegrid-col.fc-day-today {
+  background: color-mix(in srgb, var(--oc-role-on-surface) 2.5%, transparent);
+}
+
+/* "now": dotted line, time in the axis */
+.oc-calendar .fc .fc-timegrid-now-indicator-line {
+  border-width: 0;
+  border-top: 1.5px dotted var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .fc-timegrid-now-indicator-line::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -4.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .fc-timegrid-now-indicator-arrow {
+  border: 0;
+  margin-top: 0;
+  left: 0;
+  right: 0;
+  width: auto;
+}
+.oc-calendar .oc-now-label {
+  position: absolute;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  padding: 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--oc-role-on-surface);
+  background: var(--oc-role-surface);
+}
+
+/* --- events: soft tint of the event color, title then time ----------------------------- */
+.oc-calendar .fc .oc-ev {
+  --ev-bg: color-mix(in srgb, var(--ev) 14%, var(--oc-role-surface));
+  --ev-border: color-mix(in srgb, var(--ev) 40%, var(--oc-role-surface));
+  --ev-strong: color-mix(in srgb, var(--ev) 55%, var(--oc-role-on-surface));
+  --ev-soft: color-mix(in srgb, var(--ev) 80%, var(--oc-role-on-surface));
+  background: var(--ev-bg);
+  border: 1px solid var(--ev-border);
+  border-radius: 0.4rem;
+  box-shadow: none;
+  cursor: pointer;
+}
+.oc-calendar .fc .oc-ev:hover {
+  --ev-bg: color-mix(in srgb, var(--ev) 22%, var(--oc-role-surface));
+}
+.oc-calendar .fc .oc-ev .fc-event-main {
+  color: var(--ev-strong);
+}
+.oc-calendar .fc-timegrid-event.oc-ev .fc-event-main {
+  padding: 0.3rem 0.45rem;
+  overflow: hidden;
+}
+.oc-calendar .oc-ev-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ev-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-calendar .oc-ev-time,
+.oc-calendar .oc-ev-location {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ev-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-calendar .fc-timegrid-event-harness-inset .oc-ev {
+  box-shadow: 0 0 0 1px var(--oc-role-surface);
+}
+/* all-day / month blocks */
+.oc-calendar .fc .fc-daygrid-block-event.oc-ev .fc-event-main {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+/* month view timed events: colored dot, no box */
+.oc-calendar .fc .fc-daygrid-dot-event.oc-ev {
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.75rem;
+}
+.oc-calendar .fc .fc-daygrid-dot-event.oc-ev:hover {
+  background: var(--ev-bg);
+}
+.oc-calendar .fc .fc-daygrid-dot-event .fc-event-title {
+  font-weight: 600;
+  color: var(--oc-role-on-surface);
+}
+.oc-calendar .fc .fc-daygrid-dot-event .fc-event-time {
+  color: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .oc-ev .fc-daygrid-event-dot,
+.oc-calendar .fc .oc-ev .fc-list-event-dot {
+  border-color: var(--ev);
+}
+/* agenda (list) view */
+.oc-calendar .fc .fc-list {
+  border: 0;
+}
+.oc-calendar .fc .fc-list-day-cushion {
+  font-size: 0.8rem;
+}
+/* "lundi" -> "Lundi", without "19 Octobre" */
+.oc-calendar .fc .fc-list-day-text::first-letter {
+  text-transform: uppercase;
+}
+.oc-calendar .fc .fc-list-event.oc-ev {
+  background: transparent;
+  border: 0;
+}
+.oc-calendar .fc .fc-list-event-title {
+  font-weight: 600;
+}
+
+/* --- invitations (guest side) ---------------------------------------------------------- */
+.oc-calendar .fc .oc-ev-pending {
+  --ev-bg: color-mix(in srgb, var(--ev) 6%, var(--oc-role-surface));
+  border-style: dashed;
+}
+.oc-calendar .fc .oc-ev-tentative {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--ev) 12%, transparent) 6px 12px
+  );
+}
+.oc-calendar .fc .oc-ev-declined {
+  opacity: 0.55;
+  --ev-bg: transparent;
+}
+.oc-calendar .fc .oc-ev-declined .oc-ev-title,
+.oc-calendar .fc .oc-ev-declined .fc-event-title {
+  text-decoration: line-through;
+}
+/* status puce before the title of invitations: ○ awaiting answer, ◐ maybe, ● accepted, red ○ declined */
+.oc-calendar .fc .oc-ev-invitation :is(.oc-ev-title, .fc-event-title, .fc-list-event-title a)::before,
+.oc-puce {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.35em;
+  vertical-align: 0.05em;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ev, var(--oc-role-primary));
+  background: transparent;
+}
+.oc-calendar .fc .oc-ev-accepted :is(.oc-ev-title, .fc-event-title, .fc-list-event-title a)::before,
+.oc-puce.accepted {
+  background: var(--ev, var(--oc-role-primary));
+}
+.oc-calendar .fc .oc-ev-tentative :is(.oc-ev-title, .fc-event-title, .fc-list-event-title a)::before,
+.oc-puce.tentative {
+  background: linear-gradient(90deg, var(--ev, var(--oc-role-primary)) 50%, transparent 50%);
+}
+.oc-calendar .fc .oc-ev-declined :is(.oc-ev-title, .fc-event-title, .fc-list-event-title a)::before,
+.oc-puce.declined {
+  border-color: var(--oc-role-error);
+}
+
+/* events with guests: "people" mark drawn in the text color (no emoji font needed) */
+.oc-calendar .fc .oc-ev-with-guests .oc-ev-title::after,
+.oc-calendar .fc .oc-ev-invitation .oc-ev-title::after,
+.oc-calendar .fc .oc-ev-with-guests .fc-event-title::after,
+.oc-calendar .fc .oc-ev-invitation .fc-event-title::after {
+  content: '';
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-left: 0.3em;
+  vertical-align: -0.1em;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4 0-7 2-7 5v2h14v-2c0-3-3-5-7-5zm8-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm1 2h-1.1c1.3 1.1 2.1 2.6 2.1 4.5V20h3v-2c0-2.7-2-4.6-4-5z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* The CSP (font-src 'self') blocks FullCalendar's inline icon font: use text glyphs. */
+.oc-calendar .fc .fc-icon {
+  font-family: inherit;
+  font-size: 1.4em;
+  line-height: 1;
+  width: auto;
+  height: auto;
+}
+.oc-calendar .fc .fc-icon-x::before {
+  content: '×';
+}
+.oc-calendar .fc .fc-popover {
+  background: var(--oc-role-surface-container);
+  border-color: var(--oc-role-outline-variant);
+  border-radius: 0.5rem;
+}
+.oc-calendar .fc .fc-more-link {
+  font-size: 0.72rem;
+  color: var(--oc-role-on-surface-variant);
+}

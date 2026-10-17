@@ -1,0 +1,5 @@
+{
+  "extends": "@opencloud-eu/tsconfig",
+  "compilerOptions": { "types": ["vite/client"] },
+  "include": ["src", "extension.d.ts"]
+}
