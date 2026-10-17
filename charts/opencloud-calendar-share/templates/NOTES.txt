@@ -1,0 +1,45 @@
+opencloud-calendar-share {{ .Chart.AppVersion }} — Radicale + calshare are running as "{{ include "calendar.fullname" . }}" in {{ .Release.Namespace }}.
+
+{{- if .Values.opencloud.patch.enabled }}
+
+OpenCloud ({{ include "calendar.opencloudNamespace" . }}/{{ .Values.opencloud.patch.deployment }}) has been patched: the
+"calendar" web extension{{ if .Values.opencloud.patch.proxyConfig }} and the proxy routes{{ end }} are installed and OpenCloud restarts once.
+`helm uninstall` removes the patch again.
+{{- if .Values.opencloud.patch.proxyConfig }}
+Note: /etc/opencloud/proxy.yaml now comes from Secret {{ include "calendar.fullname" . }}-opencloud-proxy. Put any
+other routes you had in `opencloud.proxy.extraRoutes`.
+{{- end }}
+{{- else }}
+
+Two things are left to do on the OpenCloud side (opencloud.patch.enabled=false):
+
+1. Proxy routes: mount Secret {{ include "calendar.fullname" . }}-opencloud-proxy (namespace {{ include "calendar.opencloudNamespace" . }})
+   as /etc/opencloud/proxy.yaml in OpenCloud, or merge its routes into yours:
+     kubectl -n {{ include "calendar.opencloudNamespace" . }} get secret {{ include "calendar.fullname" . }}-opencloud-proxy -o jsonpath='{.data.proxy\.yaml}' | base64 -d
+   Keep the X-Calshare-Secret headers of these routes: calshare refuses requests without them.
+
+2. Web extension: copy /usr/share/nginx/html/calendar/ from image {{ include "calendar.webImage" . }} into
+   OpenCloud's apps directory (WEB_ASSET_APPS_PATH/calendar, default /var/lib/opencloud/web/assets/apps/calendar).
+   The image follows the layout of the official opencloudeu/web-extensions images.
+   For an OpenCloud deployed with plain manifests, `--set opencloud.patch.enabled=true` does both steps.
+{{- end }}
+
+{{- if not .Values.calshare.publicUrl }}
+
+WARNING: calshare.publicUrl is empty: invitations will not contain Accept / Maybe / Decline links.
+{{- end }}
+{{- if not .Values.calshare.serviceAccount.existingSecret }}
+
+Invitations created in CalDAV clients (guests added by e-mail in Thunderbird, DAVx⁵…) are disabled.
+To enable them, create a plain OpenCloud user (e.g. "calshare-bot"), give it an app token and store it:
+  opencloud auth-app create --user-name=calshare-bot --expiration=8760h
+  kubectl -n {{ .Release.Namespace }} create secret generic calshare-service --from-literal=auth=calshare-bot:<token>
+then set calshare.serviceAccount.existingSecret=calshare-service.
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+
+Note: networkPolicy.enabled=false. calshare still refuses requests without the proxy secret, but anything in
+the cluster can reach the pod: keep the NetworkPolicy on if your CNI enforces them.
+{{- end }}
+
+CalDAV address for users: <OpenCloud URL>/caldav/  —  test the install with: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

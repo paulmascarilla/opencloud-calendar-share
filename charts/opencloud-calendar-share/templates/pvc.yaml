@@ -1,0 +1,19 @@
+{{- if and .Values.radicale.persistence.enabled (not .Values.radicale.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "calendar.fullname" . }}-data
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+  annotations:
+    # calendars live here: keep them when the release is uninstalled
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.radicale.persistence.accessMode }}]
+  {{- with .Values.radicale.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.radicale.persistence.size }}
+{{- end }}

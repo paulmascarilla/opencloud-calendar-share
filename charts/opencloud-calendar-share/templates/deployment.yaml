@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "calendar.fullname" . }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Radicale keeps its data on a ReadWriteOnce volume and locks it: never two pods.
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "calendar.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "calendar.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/radicale-config.yaml") . | sha256sum }}
+        checksum/proxy-secret: {{ include "calendar.proxySecret" . | sha256sum | trunc 16 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: radicale
+          image: "{{ .Values.radicale.image.repository }}:{{ .Values.radicale.image.tag }}"
+          imagePullPolicy: {{ .Values.radicale.image.pullPolicy }}
+          # Localhost only: clients go through calshare's CalDAV gate, which checks the proxy secret.
+          args: ["--hosts", "127.0.0.1:5232"]
+          readinessProbe:
+            exec: { command: ["nc", "-z", "127.0.0.1", "5232"] }
+            periodSeconds: 15
+          livenessProbe:
+            exec: { command: ["nc", "-z", "127.0.0.1", "5232"] }
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.radicale.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/radicale
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/radicale
+        - name: calshare
+          image: {{ include "calendar.calshareImage" . | quote }}
+          imagePullPolicy: {{ .Values.calshare.image.pullPolicy }}
+          env:
+            - name: RADICALE_URL
+              value: http://127.0.0.1:5232
+            - name: OC_URL
+              value: {{ .Values.calshare.opencloudUrl | quote }}
+            - name: OC_INSECURE
+              value: {{ .Values.calshare.opencloudInsecure | quote }}
+            - name: AUTO_ACCEPT
+              value: {{ .Values.calshare.autoAccept | quote }}
+            - name: PUBLIC_URL
+              value: {{ .Values.calshare.publicUrl | quote }}
+            - name: INVITE_LANGUAGE
+              value: {{ .Values.calshare.language | quote }}
+            - name: CALDAV_LISTEN
+              value: "0.0.0.0:5233"
+            - name: PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "calendar.fullname" . }}-proxy-secret
+                  key: secret
+            {{- with .Values.calshare.serviceAccount.existingSecret }}
+            - name: OC_SERVICE_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.calshare.serviceAccount.secretKey }}
+            {{- end }}
+          ports:
+            - name: calshare
+              containerPort: 8080
+            # CalDAV gate to Radicale
+            - name: caldav
+              containerPort: 5233
+          # exec probes: they keep working whatever the NetworkPolicy lets in
+          readinessProbe:
+            exec: { command: ["/calshare", "check", "http://127.0.0.1:8080/healthz", "127.0.0.1:5233"] }
+            periodSeconds: 15
+          livenessProbe:
+            exec: { command: ["/calshare", "check", "http://127.0.0.1:8080/healthz"] }
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.calshare.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            # invitation index + catch-up scan of the collections
+            - name: data
+              mountPath: /var/lib/radicale
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "calendar.fullname" . }}-radicale
+        - name: data
+          {{- if .Values.radicale.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "calendar.fullname" .)) .Values.radicale.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

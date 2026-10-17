@@ -1,0 +1,17 @@
+apiVersion: v2
+name: opencloud-calendar-share
+description: >-
+  Calendars for OpenCloud: Radicale (CalDAV/CardDAV) with calendar sharing, event invitations
+  between users (calshare sidecar) and an interactive calendar app for OpenCloud Web.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords: [opencloud, caldav, carddav, radicale, calendar]
+home: https://github.com/paulmascarilla/opencloud-calendar-share
+sources:
+  - https://github.com/paulmascarilla/opencloud-calendar-share
+maintainers:
+  - name: paulmascarilla
+annotations:
+  artifacthub.io/license: AGPL-3.0

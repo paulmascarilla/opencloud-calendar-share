@@ -1,0 +1,39 @@
+# proxy.yaml for OpenCloud: routes CalDAV/CardDAV to Radicale (through calshare's gate) and
+# /calshare/ to the sidecar. The OpenCloud proxy authenticates the user, passes their id in
+# X-Remote-User and adds the shared secret calshare checks. A Secret, since it holds that secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "calendar.fullname" . }}-opencloud-proxy
+  namespace: {{ include "calendar.opencloudNamespace" . }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  proxy.yaml: |
+    additional_policies:
+      - name: default
+        routes:
+          {{- $host := include "calendar.serviceHost" . }}
+          {{- $dav := list (list "/caldav/" "/caldav") (list "/.well-known/caldav" "/caldav") }}
+          {{- if .Values.opencloud.proxy.carddav }}
+          {{- $dav = concat $dav (list (list "/carddav/" "/carddav") (list "/.well-known/carddav" "/carddav")) }}
+          {{- end }}
+          {{- range $dav }}
+          - endpoint: {{ index . 0 }}
+            backend: http://{{ $host }}:5232
+            remote_user_header: X-Remote-User
+            skip_x_access_token: true
+            additional_headers:
+              X-Script-Name: {{ index . 1 }}
+              X-Calshare-Secret: {{ include "calendar.proxySecret" $ | quote }}
+          {{- end }}
+          - endpoint: /calshare/
+            backend: http://{{ $host }}:8080
+            remote_user_header: X-Remote-User
+            skip_x_access_token: true
+            additional_headers:
+              X-Calshare-Secret: {{ include "calendar.proxySecret" . | quote }}
+          {{- with .Values.opencloud.proxy.extraRoutes }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}

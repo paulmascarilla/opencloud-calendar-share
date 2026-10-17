@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "calendar.fullname" . }}-radicale
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+data:
+  config: |
+    [server]
+    # Only calshare's CalDAV gate (same pod) talks to Radicale.
+    hosts = 127.0.0.1:5232
+
+    [auth]
+    # The OpenCloud proxy authenticates users and passes their id in X-Remote-User.
+    type = http_x_remote_user
+
+    [rights]
+    type = {{ .Values.radicale.rights }}
+
+    [storage]
+    filesystem_folder = /var/lib/radicale/collections
+    # Tells the calshare sidecar about every write (event invitations). Runs inside the
+    # write lock, so it only notifies (1 s timeout); the sidecar does the work afterwards.
+    hook = wget -q -T 1 -O /dev/null --post-data= --header=X-Calshare-Request:%(request)s --header=X-Calshare-Path:%(path)s --header=X-Calshare-To:%(to_path)s http://127.0.0.1:8080/internal/storage-changed
+    {{- with .Values.radicale.predefinedCollections }}
+    predefined_collections = {{ toJson . }}
+    {{- end }}
+
+    [sharing]
+    # Calendar sharing between users (driven by calshare)
+    type = files
+    collection_by_map = true
+    collection_by_token = false
+    permit_create_map = true
+
+    [web]
+    type = none
+    {{- with .Values.radicale.extraConfig }}
+
+    {{ . | nindent 4 | trim }}
+    {{- end }}

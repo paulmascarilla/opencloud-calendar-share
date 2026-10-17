@@ -1,0 +1,119 @@
+# opencloud-calendar-share: Radicale + calshare sidecar, and the wiring OpenCloud needs
+# (proxy routes + the "calendar" web extension).
+
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+radicale:
+  image:
+    repository: docker.io/opencloudeu/radicale
+    tag: v3.8.1
+    pullPolicy: IfNotPresent
+  # Each user only sees their own collections; sharing goes through Radicale's map sharing.
+  rights: owner_only
+  # Collections created on a user's first connection (names are not translated).
+  predefinedCollections:
+    def-addressbook:
+      D:displayname: Contacts
+      tag: VADDRESSBOOK
+    def-calendar:
+      C:supported-calendar-component-set: VEVENT
+      D:displayname: Calendar
+      ICAL:calendar-color: "#3b82f6"
+      tag: VCALENDAR
+    def-tasks:
+      C:supported-calendar-component-set: VTODO
+      D:displayname: Tasks
+      ICAL:calendar-color: "#f59e0b"
+      tag: VCALENDAR
+  # Appended verbatim to the Radicale config (INI).
+  extraConfig: ""
+  persistence:
+    enabled: true
+    # Reuse an existing PVC (e.g. data of a previous Radicale install).
+    existingClaim: ""
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+calshare:
+  image:
+    repository: ghcr.io/paulmascarilla/opencloud-calendar-share/calshare
+    # defaults to the chart appVersion
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Public URL of OpenCloud, used for the Accept / Maybe / Decline links put in invitations.
+  publicUrl: ""
+  # Language of the texts added to invitations: en | fr
+  language: en
+  # URL the sidecar uses to reach OpenCloud's Graph API (in-cluster).
+  opencloudUrl: https://opencloud:9200
+  # Skip TLS verification for opencloudUrl (self-signed in-cluster certificates).
+  opencloudInsecure: false
+  # Shares appear immediately for the recipient (no accept step).
+  autoAccept: true
+  # Plain (non-admin) OpenCloud user used to resolve e-mail guests of events created in
+  # CalDAV clients. Secret key holds "user:app-token". Leave empty to disable that feature.
+  serviceAccount:
+    existingSecret: ""
+    secretKey: auth
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { memory: 128Mi }
+
+webExtension:
+  image:
+    repository: ghcr.io/paulmascarilla/opencloud-calendar-share/web
+    # defaults to the chart appVersion
+    tag: ""
+    pullPolicy: IfNotPresent
+
+opencloud:
+  # Namespace of OpenCloud (defaults to the release namespace).
+  namespace: ""
+  # Labels of the OpenCloud pods (NetworkPolicy).
+  podSelector:
+    app: opencloud
+  # Proxy routes rendered into the "<release>-opencloud-proxy" ConfigMap (proxy.yaml).
+  proxy:
+    # Also route CardDAV (contacts) to Radicale.
+    carddav: true
+    # Extra routes of the "default" policy, appended as-is (list of route objects).
+    extraRoutes: []
+  # Patch an OpenCloud Deployment that is NOT managed by Helm (plain manifests):
+  # installs the web extension and mounts the proxy config. Removed on uninstall.
+  patch:
+    enabled: false
+    deployment: opencloud
+    container: opencloud
+    # Directory OpenCloud Web loads extensions from (WEB_ASSET_APPS_PATH, default below).
+    appsPath: /var/lib/opencloud/web/assets/apps
+    # Mount the generated proxy.yaml at /etc/opencloud/proxy.yaml (replaces any existing one).
+    proxyConfig: true
+    kubectlImage: registry.k8s.io/kubectl:v1.33.4
+
+# Only OpenCloud may reach Radicale and calshare: they trust the X-Remote-User header the
+# OpenCloud proxy sets. Requires a CNI that enforces NetworkPolicies; calshare also checks a secret
+# the proxy adds to every request (generated, Secret "<release>-proxy-secret"), so this is a second layer.
+networkPolicy:
+  enabled: true
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+nodeSelector: {}
+tolerations: []
+affinity: {}

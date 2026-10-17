@@ -1,0 +1,163 @@
+{{- if .Values.opencloud.patch.enabled }}
+{{- $ns := include "calendar.opencloudNamespace" . }}
+{{- $name := printf "%s-opencloud-patch" (include "calendar.fullname" .) }}
+{{- $p := .Values.opencloud.patch }}
+# Wires the calendar into an OpenCloud Deployment that is not managed by Helm:
+# post-install/upgrade adds the web extension (+ proxy config), pre-delete removes it again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+data:
+  patch.yaml: |
+    spec:
+      template:
+        metadata:
+          annotations:
+            # restarts OpenCloud when the extension or the routes change
+            opencloud-calendar/revision: {{ printf "%s|%s" (include "calendar.webImage" .) (include (print $.Template.BasePath "/opencloud-proxy.yaml") .) | sha256sum | trunc 16 | quote }}
+        spec:
+          initContainers:
+            - name: opencloud-calendar-web
+              image: {{ include "calendar.webImage" . | quote }}
+              imagePullPolicy: {{ .Values.webExtension.image.pullPolicy }}
+              command: ["sh", "-c", "cp -R /usr/share/nginx/html/calendar/. /web-apps/"]
+              volumeMounts:
+                - name: opencloud-calendar-web
+                  mountPath: /web-apps
+          containers:
+            - name: {{ $p.container }}
+              volumeMounts:
+                # a sub-folder of the apps directory: other extensions are left alone
+                - name: opencloud-calendar-web
+                  mountPath: {{ $p.appsPath }}/calendar
+                  readOnly: true
+                {{- if $p.proxyConfig }}
+                - name: opencloud-calendar-proxy
+                  mountPath: /etc/opencloud/proxy.yaml
+                  subPath: proxy.yaml
+                  readOnly: true
+                {{- end }}
+          volumes:
+            - name: opencloud-calendar-web
+              emptyDir: {}
+            {{- if $p.proxyConfig }}
+            - name: opencloud-calendar-proxy
+              configMap: null  # older releases mounted a ConfigMap
+              secret:
+                secretName: {{ include "calendar.fullname" . }}-opencloud-proxy
+            {{- end }}
+  unpatch.yaml: |
+    spec:
+      template:
+        metadata:
+          annotations:
+            opencloud-calendar/revision: null
+        spec:
+          initContainers:
+            - name: opencloud-calendar-web
+              $patch: delete
+          containers:
+            - name: {{ $p.container }}
+              volumeMounts:
+                - mountPath: {{ $p.appsPath }}/calendar
+                  $patch: delete
+                {{- if $p.proxyConfig }}
+                - mountPath: /etc/opencloud/proxy.yaml
+                  $patch: delete
+                {{- end }}
+          volumes:
+            - name: opencloud-calendar-web
+              $patch: delete
+            {{- if $p.proxyConfig }}
+            - name: opencloud-calendar-proxy
+              $patch: delete
+            {{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+rules:
+  # only the OpenCloud Deployment, only read + patch
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: [{{ $p.deployment | quote }}]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+{{- range $hook := list (dict "action" "patch" "when" "post-install,post-upgrade") (dict "action" "unpatch" "when" "pre-delete") }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-{{ if eq $hook.action "patch" }}apply{{ else }}remove{{ end }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "calendar.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ $hook.when }}
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "calendar.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: opencloud-patch
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: kubectl
+          image: {{ $p.kubectlImage }}
+          args:
+            - --namespace={{ $ns }}
+            - patch
+            - deployment/{{ $p.deployment }}
+            - --type=strategic
+            - --patch-file=/patch/{{ $hook.action }}.yaml
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: patch
+              mountPath: /patch
+      volumes:
+        - name: patch
+          configMap:
+            name: {{ $name }}
+{{- end }}
+{{- end }}

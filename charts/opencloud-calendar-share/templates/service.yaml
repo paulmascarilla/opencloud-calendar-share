@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "calendar.fullname" . }}
+  labels:
+    {{- include "calendar.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "calendar.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: caldav
+      port: 5232
+      targetPort: caldav
+    - name: calshare
+      port: 8080
+      targetPort: calshare
