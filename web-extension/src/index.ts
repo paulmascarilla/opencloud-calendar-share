@@ -19,6 +19,13 @@ import { startInvitationsFeed } from './invitationsFeed'
 // Must not be "caldav" or "calshare": the proxy sends those paths to Radicale and its sidecar.
 const applicationId = 'calendar'
 
+// App icon: the repo icon (docs/assets/icon.svg) drawn as a one-color glyph like OpenCloud's own app
+// icons, on the theme's secondary tile like Files. OpenCloud 8.1 only takes icon names, resolved as
+// <base>icons/<name>-fill.svg, so the name points back to public/img/app-fill.svg under
+// <base>assets/apps/calendar/.
+const appIcon = `../assets/apps/${applicationId}/img/app`
+const appIconColor = 'var(--oc-role-secondary)'
+
 export default defineWebApplication({
   setup() {
     const { $gettext } = useGettext()
@@ -51,9 +58,9 @@ export default defineWebApplication({
     const appInfo: ApplicationInformation = {
       name: $gettext('Calendar'),
       id: applicationId,
-      icon: 'calendar-event',
+      icon: appIcon,
       iconFillType: 'fill',
-      iconColor: '#3b82f6'
+      iconColor: appIconColor
     }
 
     const extensions = computed<(AppMenuItemExtension | CustomComponentExtension)[]>(() => {
@@ -69,9 +76,9 @@ export default defineWebApplication({
         {
           id: `app.${applicationId}.menuItem`,
           type: 'appMenuItem',
-          label: () => $gettext('Calendar'),
-          icon: 'calendar-event',
-          color: '#3b82f6',
+          label: () => 'WebCalendar',
+          icon: appIcon,
+          color: appIconColor,
           path: urlJoin(applicationId)
         }
       ]
