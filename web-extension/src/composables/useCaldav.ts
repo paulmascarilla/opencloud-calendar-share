@@ -35,11 +35,14 @@ export function useCaldav() {
   }
 
   async function dav(method: string, href: string, body?: string, headers: Record<string, string> = {}) {
+    // Never answer a GET from the browser cache: its ETag would be stale if the event changed elsewhere,
+    // and the next If-Match write would fail.
+    const noCache: Record<string, string> = method === 'GET' ? { 'Cache-Control': 'no-cache' } : {}
     const response = await clientService.httpAuthenticated.request<string>({
       method,
       url: url(href),
       data: body,
-      headers: { 'Content-Type': 'application/xml; charset=utf-8', ...headers },
+      headers: { 'Content-Type': 'application/xml; charset=utf-8', ...noCache, ...headers },
       responseType: 'text',
       transformResponse: (data: string) => data,
       validateStatus: () => true
