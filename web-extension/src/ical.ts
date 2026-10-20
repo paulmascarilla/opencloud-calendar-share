@@ -8,8 +8,16 @@ export interface Person {
   name: string
 }
 
+/** Another time a guest proposed (end exclusive; YYYY-MM-DD for all-day, else ISO UTC) */
+export interface Proposal {
+  start: string
+  end: string
+  allDay: boolean
+}
+
 export interface Guest extends Person {
   response: GuestResponse
+  proposal: Proposal | null
 }
 
 export interface EventInstance {
@@ -73,7 +81,8 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
       end: endOf(event, allDay),
       allDay,
       location: event.location || '',
-      description: original(vevent, 'x-oc-description') ?? (event.description || ''),
+      // On a copy without X-OC-DESCRIPTION the organizer wrote none: DESCRIPTION only holds the answer links.
+      description: original(vevent, 'x-oc-description') ?? (invitationFrom ? '' : event.description || ''),
       // An occurrence of an expanded series, or a stored series itself (single GET)
       recurring: recurrenceId !== null || vevent.hasProperty('rrule') || vevent.hasProperty('rdate'),
       recurrenceId,
@@ -82,7 +91,13 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
         .getAllProperties('attendee')
         .map((p) => {
           const who = person(p)
-          return who && { ...who, response: RESPONSES[String(p.getParameter('partstat') ?? '').toUpperCase()] ?? 'pending' }
+          return (
+            who && {
+              ...who,
+              response: RESPONSES[String(p.getParameter('partstat') ?? '').toUpperCase()] ?? 'pending',
+              proposal: proposalOf(p)
+            }
+          )
         })
         .filter((g): g is Guest => !!g),
       invitationFrom,
@@ -124,6 +139,18 @@ const RESPONSES: Record<string, GuestResponse> = {
   ACCEPTED: 'accepted',
   TENTATIVE: 'tentative',
   DECLINED: 'declined'
+}
+
+/** X-OC-PROPOSED-START / -END on an ATTENDEE (written by the calshare sidecar). */
+function proposalOf(prop: ICAL.Property): Proposal | null {
+  const start = prop.getParameter('x-oc-proposed-start') as string | undefined
+  const end = prop.getParameter('x-oc-proposed-end') as string | undefined
+  if (!start || !end) return null
+  const iso = (v: string) =>
+    v.length === 8
+      ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`
+      : `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T${v.slice(9, 11)}:${v.slice(11, 13)}:${v.slice(13, 15)}Z`
+  return { start: iso(start), end: iso(end), allDay: start.length === 8 }
 }
 
 /** OpenCloud users carry their id in X-OC-USERID (set by the calshare sidecar). */

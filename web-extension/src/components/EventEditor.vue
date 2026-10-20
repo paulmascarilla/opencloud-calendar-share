@@ -28,7 +28,26 @@
               <oc-icon :name="option.icon" size="small" />
               {{ option.label }}
             </oc-button>
+            <oc-button
+              v-if="!event?.recurring && !proposing"
+              appearance="raw"
+              size="small"
+              :disabled="saving"
+              @click="proposing = true"
+            >
+              <oc-icon name="calendar-event" size="small" />
+              {{ $gettext('Propose another time') }}
+            </oc-button>
           </div>
+          <propose-time
+            v-if="proposing"
+            :start="initial.start"
+            :end="initial.end"
+            :all-day="initial.allDay"
+            :sending="saving"
+            @submit="emit('propose', $event)"
+            @cancel="proposing = false"
+          />
         </div>
 
         <oc-notification-message
@@ -115,6 +134,9 @@
           :organizer="event?.organizer && event.organizer.id !== meId ? event.organizer : null"
           :editable="guestsEditable"
           :me-id="meId"
+          :can-decide="!!event && guestsEditable"
+          :busy="saving"
+          @decide="(guest, accept) => emit('decide', guest, accept)"
         />
 
         <div v-if="event && !readOnly" class="ext:flex ext:justify-start">
@@ -136,6 +158,7 @@ import { CalendarSource, EventDraft, EventInstance } from '../composables/useCal
 import type { Guest, GuestResponse } from '../ical'
 import GuestList from './GuestList.vue'
 import ColorPicker from './ColorPicker.vue'
+import ProposeTime from './ProposeTime.vue'
 
 type Answer = Exclude<GuestResponse, 'pending'>
 
@@ -156,6 +179,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'save', draft: EventDraft): void
   (e: 'respond', response: Answer): void
+  (e: 'propose', proposal: { start: string; end: string }): void
+  (e: 'decide', guest: string, accept: boolean): void
   (e: 'delete'): void
   (e: 'close'): void
 }>()
@@ -172,6 +197,7 @@ const startInput = ref(toInput(props.initial.start, props.initial.allDay))
 const endInput = ref(toInput(inclusiveEnd(props.initial.end, props.initial.allDay), props.initial.allDay))
 
 const guests = ref<Guest[]>([...props.initial.guests])
+const proposing = ref(false)
 const color = ref<string | null>(props.initial.color)
 
 const timesLocked = computed(() => !!props.event?.recurring)

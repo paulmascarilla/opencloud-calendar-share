@@ -95,6 +95,23 @@ export function useCalshare() {
     return data
   }
 
+  /** Proposes another time for an invitation (ISO dates, or YYYY-MM-DD for all-day, end exclusive). */
+  async function propose(calendar: string, event: string, start: string, end: string) {
+    const { data } = await clientService.httpAuthenticated.post(url('calendars', calendar, 'events', event, 'propose'), {
+      start,
+      end
+    })
+    return data
+  }
+
+  /** Moves the event to a guest's proposal, or dismisses it (organizer). */
+  async function decideProposal(calendar: string, event: string, guest: string, accept: boolean) {
+    const { data } = await clientService.httpAuthenticated.post(
+      url('calendars', calendar, 'events', event, 'proposals', guest, accept ? 'accept' : 'decline')
+    )
+    return data
+  }
+
   async function pendingInvitations() {
     const { data } = await clientService.httpAuthenticated.get<PendingInvitation[]>(url('invitations', 'pending'))
     return data
@@ -109,6 +126,8 @@ export function useCalshare() {
     respond,
     setGuests,
     answerInvitation,
+    propose,
+    decideProposal,
     pendingInvitations
   }
 }

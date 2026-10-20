@@ -47,8 +47,13 @@ const (
 	SyncHash        = "X-OC-SYNC-HASH"
 	OriginalSummary = "X-OC-SUMMARY"
 	OriginalDescr   = "X-OC-DESCRIPTION"
+	// In each VEVENT of a copy: hash of what the guest may not change (see contentHash).
+	CopyHash = "X-OC-COPY-HASH"
+	// ATTENDEE parameters in the organizer's event: another time proposed by that guest.
+	ProposedStart = "X-OC-PROPOSED-START"
+	ProposedEnd   = "X-OC-PROPOSED-END"
 	// Bump when the content of copies changes, so existing copies get rewritten.
-	CopyFormat = "6"
+	CopyFormat = "7"
 )
 
 // Ignored when deciding whether a copy is up to date.
@@ -58,6 +63,7 @@ type texts struct {
 	Invited string
 	Answers map[string]string
 	Buttons map[string]string
+	Propose string
 }
 
 var allTexts = map[string]texts{
@@ -66,12 +72,14 @@ var allTexts = map[string]texts{
 		Answers: map[string]string{"NEEDS-ACTION": "en attente", "ACCEPTED": "acceptée", "TENTATIVE": "peut-être",
 			"DECLINED": "refusée"},
 		Buttons: map[string]string{"accepted": "Accepter", "tentative": "Peut-être", "declined": "Refuser"},
+		Propose: "Proposer un autre horaire",
 	},
 	"en": {
 		Invited: "Invitation from {organizer}. Your answer: {answer}.",
 		Answers: map[string]string{"NEEDS-ACTION": "pending", "ACCEPTED": "accepted", "TENTATIVE": "maybe",
 			"DECLINED": "declined"},
 		Buttons: map[string]string{"accepted": "Accept", "tentative": "Maybe", "declined": "Decline"},
+		Propose: "Propose another time",
 	},
 }
 
@@ -93,6 +101,7 @@ type masterEntry struct {
 type invitationIndex struct {
 	Masters map[string]*masterEntry `json:"masters"` // master path -> its copies
 	Copies  map[string]string       `json:"copies"`  // copy path -> master path
+	Mails   map[string]string       `json:"mails"`   // user id -> e-mail address, as the user's own Graph /me says
 }
 
 type job struct{ request, path, toPath string }
@@ -259,8 +268,40 @@ func (a *Agent) handle(request, path, toPath string) error {
 		return a.deleted(path)
 	case "MOVE":
 		return a.moved(path, toPath)
+	case refresh:
+		if masterPath := a.index.Copies[path]; masterPath != "" {
+			return a.rewriteCopy(masterPath, owner(path), path)
+		}
 	}
 	return nil
+}
+
+// refresh is an internal job: rewrite one copy (e.g. an e-mail address became known).
+const refresh = "REFRESH"
+
+// LearnMail remembers a user's e-mail address, read with their own credentials (Graph hides
+// it from a non-admin service account), and rewrites the copies that name them.
+func (a *Agent) LearnMail(user, mail string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.index.Mails[user] == mail {
+		return
+	}
+	a.index.Mails[user] = mail
+	if err := a.saveIndex(); err != nil {
+		slog.Warn(fmt.Sprintf("saving the invitations index: %v", err))
+	}
+	a.qmu.Lock()
+	for _, copyPath := range sortedKeys(a.index.Copies) {
+		if owner(copyPath) == user || owner(a.index.Copies[copyPath]) == user {
+			a.queue = append(a.queue, job{refresh, copyPath, ""})
+		}
+	}
+	a.qmu.Unlock()
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
 }
 
 // FullScan catches up on changes missed while we were not running.
@@ -625,7 +666,28 @@ func (a *Agent) copyChanged(path string, ics []byte) error {
 	a.index.Copies[path] = masterPath
 	if answer != "" && answer != current {
 		slog.Info(fmt.Sprintf("%s answered %s to %s", user, answer, masterPath))
-		return a.setPartstat(masterPath, user, answer) // its hook fans the answer out
+		if err := a.setPartstat(masterPath, user, answer); err != nil { // its hook fans the answer out
+			return err
+		}
+	}
+	// The organizer's version wins: a guest's client may still let them edit their copy
+	// (GNOME Calendar only knows read-only calendars, not read-only events).
+	copyEvent := masterEvent(cal)
+	if copyEvent != nil && copyEvent.Has(CopyHash) && copyEvent.Value(CopyHash) != contentHash(cal) {
+		if start, end, moved := movedTo(cal, masterCal); moved {
+			slog.Info(fmt.Sprintf("%s moved their copy %s: proposal to the organizer", user, path))
+			if _, err := a.setProposal(masterPath, user, start, end); err != nil {
+				return err
+			}
+		}
+		if answer != "" && answer != current {
+			return nil // the answer's fan-out rewrites the copy
+		}
+		slog.Info(fmt.Sprintf("%s changed their copy %s: putting the organizer's version back", user, path))
+		return a.rewriteCopy(masterPath, user, path)
+	}
+	if answer != "" && answer != current {
+		return nil
 	}
 	if cal.Value(SyncHash) != a.digest(masterCal) || cal.Value(OrganizerHref) == "" {
 		return a.masterChanged(masterPath)
@@ -633,29 +695,163 @@ func (a *Agent) copyChanged(path string, ics []byte) error {
 	return nil
 }
 
-func (a *Agent) setPartstat(masterPath, user, partstat string) error {
-	status, ics, etag, err := a.get(masterPath)
+// movedTo tells whether the guest's copy of a single (non-recurring) event now has other times
+// than the organizer's event, and returns them as a proposal.
+func movedTo(copyCal, masterCal *Component) (start, end string, moved bool) {
+	events := masterCal.Walk("VEVENT")
+	if len(events) != 1 || events[0].Has("RRULE") || events[0].Has("RDATE") {
+		return "", "", false
+	}
+	copyEvent := masterEvent(copyCal)
+	cs, ce, cAllDay, ok1 := span(copyEvent)
+	ms, me, mAllDay, ok2 := span(events[0])
+	if !ok1 || !ok2 || (cs.Equal(ms) && ce.Equal(me) && cAllDay == mAllDay) || !ce.After(cs) {
+		return "", "", false
+	}
+	return icalTime(cs, cAllDay), icalTime(ce, cAllDay), true
+}
+
+// icalTime writes a UTC DATE-TIME, or a DATE for an all-day event.
+func icalTime(t time.Time, allDay bool) string {
+	if allDay {
+		return t.Format("20060102")
+	}
+	return t.UTC().Format("20060102T150405Z")
+}
+
+// guarded lists what a guest may not change in their copy.
+var guarded = []string{"DTSTART", "DTEND", "DURATION", "RRULE", "RDATE", "EXDATE", "SUMMARY", "LOCATION", "DESCRIPTION"}
+
+// contentHash hashes the guarded properties of every VEVENT, in a form clients don't change
+// when they only rewrite an event (instants for times, unescaped texts).
+func contentHash(cal *Component) string {
+	var lines []string
+	for _, event := range cal.Walk("VEVENT") {
+		occurrence := ""
+		if rid := event.Get("RECURRENCE-ID"); rid != nil {
+			occurrence = rid.Value
+			if t, allDay, ok := rid.Time(); ok {
+				occurrence = icalTime(t, allDay)
+			}
+		}
+		for _, name := range guarded {
+			for _, p := range event.All(name) {
+				value := strings.TrimSpace(p.Value)
+				switch name {
+				case "DTSTART", "DTEND", "RDATE", "EXDATE":
+					if t, allDay, ok := p.Time(); ok {
+						value = icalTime(t, allDay)
+					}
+				case "SUMMARY", "LOCATION", "DESCRIPTION":
+					value = strings.TrimSpace(strings.ReplaceAll(p.Text(), "\r\n", "\n"))
+				}
+				lines = append(lines, occurrence+"|"+name+"|"+value)
+			}
+		}
+	}
+	sort.Strings(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:16])
+}
+
+// rewriteCopy puts the organizer's version of the event back into a guest's copy.
+func (a *Agent) rewriteCopy(masterPath, user, copyPath string) error {
+	status, masterICS, _, err := a.get(masterPath)
 	if err != nil || status != 200 {
 		return err
 	}
-	cal, err := ParseICal(ics)
+	masterCal, err := ParseICal(masterICS)
 	if err != nil {
 		return err
+	}
+	status, _, etag, err := a.get(copyPath)
+	if err != nil || status != 200 {
+		return err
+	}
+	copyICS, err := a.makeCopy(masterCal, masterPath, a.digest(masterCal), user, copyPath)
+	if err != nil {
+		return err
+	}
+	return a.put(copyPath, copyICS, map[string]string{"If-Match": etag})
+}
+
+// MasterOf returns the organizer's event of a guest's copy, from our own index (never from the
+// copy's marker, which the guest can write); "" if path is not a copy.
+func (a *Agent) MasterOf(copyPath string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.index.Copies[copyPath]
+}
+
+// Propose records another time proposed by user for the organizer's event masterPath.
+// Returns false when user is not invited to it.
+func (a *Agent) Propose(masterPath, user, start, end string) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.setProposal(masterPath, user, start, end)
+}
+
+func (a *Agent) setProposal(masterPath, user, start, end string) (bool, error) {
+	return a.updateAttendee(masterPath, user, func(attendee *Prop) bool {
+		if attendee.Param(ProposedStart) == start && attendee.Param(ProposedEnd) == end {
+			return false
+		}
+		attendee.SetParam(ProposedStart, start)
+		attendee.SetParam(ProposedEnd, end)
+		return true
+	})
+}
+
+// updateAttendee applies change to user's ATTENDEE in every VEVENT of the organizer's event and
+// writes it back if anything changed. found is false when user is not an attendee.
+func (a *Agent) updateAttendee(masterPath, user string, change func(*Prop) bool) (found bool, err error) {
+	status, ics, etag, err := a.get(masterPath)
+	if err != nil {
+		return false, err
+	}
+	if status != 200 {
+		return false, nil
+	}
+	cal, err := ParseICal(ics)
+	if err != nil {
+		return false, err
 	}
 	changed := false
 	for _, event := range cal.Walk("VEVENT") {
 		for _, attendee := range event.All("ATTENDEE") {
-			if userID(attendee) == user && (!attendee.HasParam("PARTSTAT") || attendee.Param("PARTSTAT") != partstat) {
-				attendee.SetParam("PARTSTAT", partstat)
-				attendee.DelParam("RSVP")
-				changed = true
+			if userID(attendee) == user {
+				found = true
+				changed = change(attendee) || changed
 			}
 		}
 	}
-	if changed {
-		return a.put(masterPath, cal.Serialize(), map[string]string{"If-Match": etag})
+	if !changed {
+		return found, nil
 	}
-	return nil
+	status, _, _, err = a.request("PUT", masterPath, owner(masterPath), cal.Serialize(),
+		map[string]string{"Content-Type": "text/calendar; charset=utf-8", "If-Match": etag})
+	if err != nil {
+		return found, err
+	}
+	if status == 412 {
+		return found, apiErr(409, "event changed in the meantime, retry")
+	}
+	if status != 200 && status != 204 {
+		return found, fmt.Errorf("PUT %s -> %d", masterPath, status)
+	}
+	return found, nil
+}
+
+func (a *Agent) setPartstat(masterPath, user, partstat string) error {
+	_, err := a.updateAttendee(masterPath, user, func(attendee *Prop) bool {
+		if attendee.HasParam("PARTSTAT") && attendee.Param("PARTSTAT") == partstat {
+			return false
+		}
+		attendee.SetParam("PARTSTAT", partstat)
+		attendee.DelParam("RSVP")
+		return true
+	})
+	return err
 }
 
 // --- what a guest's copy looks like --------------------------------------
@@ -692,8 +888,15 @@ func (a *Agent) makeCopy(masterCal *Component, masterPath, digest, user, copyPat
 		return nil, fmt.Errorf("unexpected copy path %q", copyPath)
 	}
 	links := a.respondLinks(parts[2], parts[3])
+	proposeURL := a.proposeURL(parts[2], parts[3])
 
 	for _, event := range cp.Walk("VEVENT") {
+		// E-mail addresses let the guest's client see an invitation sent to them, and lock it.
+		for _, p := range append(event.All("ORGANIZER"), event.All("ATTENDEE")...) {
+			if err := a.useMail(p); err != nil {
+				return nil, err
+			}
+		}
 		// Reminders are personal: guests don't inherit the organizer's alarms.
 		subs := event.Subs[:0]
 		for _, c := range event.Subs {
@@ -734,7 +937,10 @@ func (a *Agent) makeCopy(masterCal *Component, masterPath, digest, user, copyPat
 		for _, l := range links {
 			text += "\n" + a.texts.Buttons[l.response] + " : " + l.url
 		}
-		html := a.htmlDescription(description, intro, links)
+		if proposeURL != "" {
+			text += "\n" + a.texts.Propose + " : " + proposeURL
+		}
+		html := a.htmlDescription(description, intro, links, proposeURL)
 		prop := NewText("DESCRIPTION", text)
 		if html != "" {
 			// RFC 5545 ALTREP (Thunderbird), X-ALT-DESC (Outlook): HTML with real buttons.
@@ -754,7 +960,33 @@ func (a *Agent) makeCopy(masterCal *Component, masterPath, digest, user, copyPat
 	cp.Add(NewText(OrganizerHref, masterPath))
 	cp.Remove(SyncHash)
 	cp.Add(NewText(SyncHash, digest))
+	hash := contentHash(cp)
+	for _, event := range cp.Walk("VEVENT") {
+		event.SetText(CopyHash, hash)
+	}
 	return cp.Serialize(), nil
+}
+
+// useMail replaces an OpenCloud address (urn:uuid:…) with the user's e-mail address, when known.
+func (a *Agent) useMail(p *Prop) error {
+	id := userID(p)
+	if id == "" || !strings.HasPrefix(strings.ToLower(p.Value), "urn:uuid:") {
+		return nil
+	}
+	mail := a.index.Mails[id]
+	if mail == "" && a.resolveID != nil {
+		user, err := a.resolveID(id)
+		if err != nil {
+			return err // retried on the next change or scan
+		}
+		if user != nil {
+			mail = user.Mail
+		}
+	}
+	if mail != "" {
+		p.Value = "mailto:" + mail
+	}
+	return nil
 }
 
 type respondLink struct{ response, url string }
@@ -771,7 +1003,15 @@ func (a *Agent) respondLinks(calendar, name string) []respondLink {
 	return links
 }
 
-func (a *Agent) htmlDescription(description, intro string, links []respondLink) string {
+// proposeURL opens the invitation page, where the guest can propose another time.
+func (a *Agent) proposeURL(calendar, name string) string {
+	if a.publicURL == "" {
+		return ""
+	}
+	return a.publicURL + "/calendar/respond?cal=" + escapeQuery(calendar) + "&event=" + escapeQuery(name)
+}
+
+func (a *Agent) htmlDescription(description, intro string, links []respondLink, proposeURL string) string {
 	if len(links) == 0 {
 		return ""
 	}
@@ -785,7 +1025,11 @@ func (a *Agent) htmlDescription(description, intro string, links []respondLink) 
 	if description != "" {
 		body = "<div>" + strings.ReplaceAll(escapeHTML(description), "\n", "<br>") + "</div>"
 	}
-	return body + `<hr><p style="margin:6px 0">` + escapeHTML(intro) + "</p><p>" + strings.Join(buttons, " ") + "</p>"
+	propose := ""
+	if proposeURL != "" {
+		propose = `<p style="margin:6px 0"><a href="` + escapeHTML(proposeURL) + `">` + escapeHTML(a.texts.Propose) + "</a></p>"
+	}
+	return body + `<hr><p style="margin:6px 0">` + escapeHTML(intro) + "</p><p>" + strings.Join(buttons, " ") + "</p>" + propose
 }
 
 // --- helpers ------------------------------------------------------------
@@ -961,6 +1205,9 @@ func (a *Agent) loadIndex() invitationIndex {
 	}
 	if idx.Copies == nil {
 		idx.Copies = map[string]string{}
+	}
+	if idx.Mails == nil {
+		idx.Mails = map[string]string{}
 	}
 	for path, entry := range idx.Masters {
 		if entry == nil {

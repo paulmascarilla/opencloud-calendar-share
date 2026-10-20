@@ -75,6 +75,27 @@
             <oc-icon :name="option.icon" size="small" />
             {{ option.label }}
           </oc-button>
+          <oc-button
+            v-if="!event.recurring && !proposing"
+            appearance="raw"
+            size="small"
+            class="ext:basis-full ext:justify-end"
+            :disabled="sending"
+            @click="proposing = true"
+          >
+            <oc-icon name="calendar-event" size="small" />
+            {{ $gettext('Propose another time') }}
+          </oc-button>
+          <propose-time
+            v-if="proposing"
+            class="ext:basis-full ext:mt-2"
+            :start="times.start"
+            :end="times.end"
+            :all-day="event.allDay"
+            :sending="sending"
+            @submit="propose"
+            @cancel="proposing = false"
+          />
         </div>
       </section>
 
@@ -101,13 +122,14 @@ import { apiErrorMessage, useCalshare } from '../composables/useCalshare'
 import type { GuestResponse } from '../ical'
 import GuestList from '../components/GuestList.vue'
 import SourceLink from '../components/SourceLink.vue'
+import ProposeTime from '../components/ProposeTime.vue'
 
 type Answer = Exclude<GuestResponse, 'pending'>
 const ANSWERS: Answer[] = ['accepted', 'tentative', 'declined']
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$/
 
 const { $gettext, current } = useGettext()
-const { showErrorMessage } = useMessages()
+const { showMessage, showErrorMessage } = useMessages()
 const route = useRoute()
 const router = useRouter()
 const caldav = useCaldav()
@@ -122,6 +144,7 @@ const saved = ref(false)
 const fromLink = ref(false)
 const closingIn = ref<number | null>(null)
 const closeBlocked = ref(false)
+const proposing = ref(false)
 let closeTimer: ReturnType<typeof setInterval> | undefined
 
 const query = computed(() => unref(route).query)
@@ -175,6 +198,35 @@ function localDay(date: string) {
 function localDate(date: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** The event's times as dates (all-day end exclusive), for the proposal form. */
+const times = computed(() => {
+  const e = event.value!
+  const start = e.allDay ? localDay(e.start) : new Date(e.start)
+  if (e.end) return { start, end: e.allDay ? localDay(e.end) : new Date(e.end) }
+  const end = new Date(start)
+  if (e.allDay) end.setDate(end.getDate() + 1)
+  else end.setHours(end.getHours() + 1)
+  return { start, end }
+})
+
+async function propose(proposal: { start: string; end: string }) {
+  sending.value = true
+  try {
+    await calshare.propose(calendar.value, file.value, proposal.start, proposal.end)
+    await load()
+    proposing.value = false
+    showMessage({ title: $gettext('Your proposal was sent to the organizer') })
+  } catch (error) {
+    showErrorMessage({
+      title: $gettext('Could not send your proposal'),
+      desc: apiErrorMessage(error),
+      errors: [error as Error]
+    })
+  } finally {
+    sending.value = false
+  }
 }
 
 const calendarLink = computed(() => {
