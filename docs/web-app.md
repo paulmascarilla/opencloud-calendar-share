@@ -7,12 +7,15 @@ styling is in `src/calendar.css`.
 ## Calendar (`/calendar`)
 
 - **Layout:** title and search; filter tabs (*All events / My calendars / Shared with me / Invitations*, with a
-  badge counting pending invitations); then a card with a date badge, the month and range, ← Today →, a view
+  badge counting every invitation awaiting an answer, the same list as the bell); then a card with a date badge, the month and range, ← Today →, a view
   selector and *New event*.
 - **Views:** month / week / day / list. The sidebar shows or hides each calendar (own and shared, remembered per
   browser), creates calendars (*New calendar*: name + color) and links to sharing.
 - **Editing:** click or drag over empty space to create an event; click an event to edit or delete it; drag and
   resize to move it, or move it to another calendar from the editor (including a calendar shared with write access).
+  New events go to the calendar used last, else to the default calendar.
+- **Shared calendars:** an event you are invited to shows once, as your own copy, even when you also see the
+  organizer's calendar.
 - **Colors:** events are soft tints of their color (RFC 7986 `COLOR`, picked in the editor, else the calendar's color).
 - **Guests:** add people in the editor (see [invitations](invitations.md)). Invitations carry a status mark before
   their title: ○ awaiting answer, ◐ maybe, ● accepted, red ○ declined.

@@ -129,6 +129,9 @@ let occ = (await report('alice', aliceCal)).filter((e) => e.href === series)
 assert.deepEqual(occ.map((e) => e.recurrenceId), ['2026-10-19T10:00:00.000Z', '2026-10-20T10:00:00.000Z', '2026-10-21T10:00:00.000Z'])
 got = await call('alice', 'GET', series)
 assert.deepEqual(occ.map((e) => isModifiedOccurrence(got.text, e.recurrenceId!)), [false, true, true])
+// the stored series itself (single GET, as on the invitation page) is recurring too
+const stored = parseInstances(got.text, series, got.etag, aliceCal)
+assert.deepEqual(stored.map((e) => [e.recurring, e.recurrenceId]), [[true, null], [true, '2026-10-20T10:00:00.000Z'], [true, '2026-10-21T10:00:00.000Z']])
 // edit the 21st: only it changes
 const edit = (e: typeof occ[number], title: string) => {
   const seen = draft({ title: e.title, start: new Date(e.start), end: new Date(e.end!), location: '', description: '' })

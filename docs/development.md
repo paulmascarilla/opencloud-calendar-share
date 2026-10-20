@@ -51,7 +51,7 @@ Create `alice` and `bob` through the Graph API, then run the scripts with `OC=ht
 | `test/e2e.sh` | calendar sharing through the proxy |
 | `test/invitations-e2e.sh` | invitations: delivery, answers, moves, time zones, CalDAV-client invitations, clients dropping markers (31 checks) |
 | `web-extension`: `pnpm test:integration` | iCalendar logic against the live server |
-| `web-extension/test/ui-*.mjs` | headless Chromium (playwright-core): calendar, editing edge cases, invitations, answer links, notifications, design and auto-refresh |
+| `web-extension/test/ui-*.mjs` | headless Chromium (playwright-core): calendar, editing edge cases, invitation dates, invitations, answer links, notifications, design and auto-refresh |
 
 ```sh
 TOKENS_FILE=tokens.env test/invitations-e2e.sh

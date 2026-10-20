@@ -143,16 +143,46 @@ const options = computed(() => [
 const when = computed(() => {
   const e = event.value
   if (!e) return ''
-  const start = e.allDay ? new Date(`${e.start}T00:00:00`) : new Date(e.start)
-  const day = new Intl.DateTimeFormat(current, { dateStyle: 'full' }).format(start)
-  if (e.allDay) return `${day} · ${$gettext('All day')}`
-  const time = new Intl.DateTimeFormat(current, { hour: '2-digit', minute: '2-digit' })
-  return e.end ? `${day} · ${time.formatRange(start, new Date(e.end))}` : `${day} · ${time.format(start)}`
+  const text = e.allDay ? allDayRange(e.start, e.end) : timedRange(new Date(e.start), e.end ? new Date(e.end) : null)
+  // A series is shown from its first occurrence.
+  return e.recurring ? $gettext('Recurring, from %{when}', { when: text }) : text
 })
-const calendarLink = computed(() => ({
-  name: 'calendar-main',
-  query: { date: event.value?.start.slice(0, 10) }
-}))
+
+function allDayRange(start: string, end: string | null) {
+  const first = localDay(start)
+  // All-day ends are exclusive: show the last day.
+  const last = end ? localDay(end) : new Date(first)
+  if (end) last.setDate(last.getDate() - 1)
+  const day = new Intl.DateTimeFormat(current, { dateStyle: 'full' })
+  return `${last > first ? day.formatRange(first, last) : day.format(first)} · ${$gettext('All day')}`
+}
+
+function timedRange(start: Date, end: Date | null) {
+  if (end && localDate(end) !== localDate(start)) {
+    return new Intl.DateTimeFormat(current, { dateStyle: 'full', timeStyle: 'short' }).formatRange(start, end)
+  }
+  const day = new Intl.DateTimeFormat(current, { dateStyle: 'full' }).format(start)
+  const time = new Intl.DateTimeFormat(current, { hour: '2-digit', minute: '2-digit' })
+  return `${day} · ${end ? time.formatRange(start, end) : time.format(start)}`
+}
+
+/** YYYY-MM-DD at local midnight (``new Date('YYYY-MM-DD')`` would be UTC midnight). */
+function localDay(date: string) {
+  return new Date(`${date}T00:00:00`)
+}
+
+/** Local YYYY-MM-DD of a date-time: the day the user sees it on. */
+function localDate(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+const calendarLink = computed(() => {
+  const e = event.value
+  // A series opens on today: its first occurrence may be long past.
+  if (!e || e.recurring) return { name: 'calendar-main' }
+  return { name: 'calendar-main', query: { date: e.allDay ? e.start : localDate(new Date(e.start)) } }
+})
 
 function answerLabel(response: GuestResponse) {
   return {

@@ -183,7 +183,7 @@ export function useCaldav() {
       const { data, headers } = await dav('GET', href)
       const calendarHref = href.slice(0, href.lastIndexOf('/') + 1)
       const instances = parseInstances(data, href, (headers.etag as string) ?? '', calendarHref)
-      return instances.find((i) => !i.recurring) ?? instances[0] ?? null
+      return instances.find((i) => !i.recurrenceId) ?? instances[0] ?? null
     } catch {
       return null
     }
