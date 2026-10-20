@@ -74,7 +74,8 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
       allDay,
       location: event.location || '',
       description: original(vevent, 'x-oc-description') ?? (event.description || ''),
-      recurring: recurrenceId !== null,
+      // An occurrence of an expanded series, or a stored series itself (single GET)
+      recurring: recurrenceId !== null || vevent.hasProperty('rrule') || vevent.hasProperty('rdate'),
       recurrenceId,
       organizer: person(vevent.getFirstProperty('organizer')),
       guests: vevent

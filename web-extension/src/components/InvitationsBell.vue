@@ -99,7 +99,8 @@ function when(invitation: PendingInvitation) {
   const options: Intl.DateTimeFormatOptions = invitation.allDay
     ? { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }
     : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
-  return new Intl.DateTimeFormat(current, options).format(start)
+  const text = new Intl.DateTimeFormat(current, options).format(start)
+  return invitation.recurring ? $gettext('Recurring, from %{when}', { when: text }) : text
 }
 
 async function answer(invitation: PendingInvitation, response: 'accepted' | 'tentative' | 'declined') {

@@ -42,6 +42,7 @@
     "All day": "Toute la journée",
     "Calendar": "Agenda",
     "Calendars": "Agendas",
+    "Recurring, from %{when}": "Récurrent, à partir du %{when}",
     "Changes apply to the whole series. Dates can only be changed in a calendar app.": "Les modifications s'appliquent à toute la série. Les dates ne peuvent être changées que dans une application d'agenda.",
     "This occurrence was changed on its own: changes apply to it only. Dates can only be changed in a calendar app.": "Cette occurrence a été modifiée séparément : les modifications ne s'appliquent qu'à elle. Les dates ne peuvent être changées que dans une application d'agenda.",
     "Could not delete the event": "Impossible de supprimer l'événement",

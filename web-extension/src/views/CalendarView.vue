@@ -149,12 +149,15 @@ type Filter = 'all' | 'mine' | 'shared' | 'invitations'
 
 const HIDDEN_KEY = 'calendar.hiddenCalendars'
 const VIEW_KEY = 'calendar.view'
+const LAST_CALENDAR_KEY = 'calendar.lastCalendar'
 const REFRESH_MS = 15_000
 
 const { $gettext, current: currentLanguage } = useGettext()
 const { showMessage, showErrorMessage } = useMessages()
 const caldav = useCaldav()
 const calshare = useCalshare()
+// Invitations awaiting an answer, whatever their date: the same list as the top-bar bell.
+const feed = useInvitationsFeed()
 const userStore = useUserStore()
 const route = useRoute()
 const calendarEl = useTemplateRef<HTMLElement>('calendarEl')
@@ -173,7 +176,6 @@ const sidebarOpen = ref(false)
 const saving = ref(false)
 const confirmingDelete = ref(false)
 const creatingCalendar = ref(false)
-const pendingInvitations = ref(0)
 const header = reactive({ title: '', subtitle: '', view: '' })
 const editor = ref<{
   key: number
@@ -198,7 +200,7 @@ const tabs = computed(() => [
   { value: 'all' as Filter, label: $gettext('All events') },
   { value: 'mine' as Filter, label: $gettext('My calendars') },
   { value: 'shared' as Filter, label: $gettext('Shared with me') },
-  { value: 'invitations' as Filter, label: $gettext('Invitations'), count: pendingInvitations.value }
+  { value: 'invitations' as Filter, label: $gettext('Invitations'), count: feed.pending.value.length }
 ])
 
 // --- data: per-calendar cache, refreshed when the calendar's ctag changes -------------
@@ -227,7 +229,6 @@ const eventSources = computed<EventSourceInput[]>(() =>
           .then((events) => {
             cache.set(calendar.href, { range, events })
             dirty.delete(calendar.href)
-            countPendingInvitations()
             success(visibleEvents(events, calendar))
           })
           .catch((error) => failure(error))
@@ -257,16 +258,6 @@ function normalize(text: string) {
   return text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
 }
 
-function countPendingInvitations() {
-  let count = 0
-  for (const { events } of cache.values()) {
-    count += events.filter(
-      (e) => isMyInvitation(e) && (e.guests.find((g) => g.id === meId.value)?.response ?? 'pending') === 'pending'
-    ).length
-  }
-  pendingInvitations.value = count
-}
-
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 function onSearch(query: string) {
   clearTimeout(searchTimer)
@@ -283,12 +274,16 @@ function holderOf(calendarHref: string) {
 }
 
 /**
- * In a calendar shared with me, a guest's copy of an event I organize or am invited to
- * duplicates what my own calendar already shows.
+ * In a calendar shared with me, a guest's copy of an event I organize or am invited to, or the
+ * organizer's event I am invited to, duplicates what my own calendar already shows.
  */
 function isDuplicate(event: EventInstance, calendar: CalendarSource) {
-  if (!event.invitationFrom || holderOf(calendar.href) === meId.value) return false
-  return event.organizer?.id === meId.value || event.guests.some((g) => g.id === meId.value)
+  if (holderOf(calendar.href) === meId.value) return false
+  if (event.invitationFrom) {
+    return event.organizer?.id === meId.value || event.guests.some((g) => g.id === meId.value)
+  }
+  // The organizer's own event, invited to: my copy is in my calendar (an event I organize here has none).
+  return event.guests.some((g) => g.id === meId.value)
 }
 
 /** My own copy of an invitation: the only one I can answer. */
@@ -449,7 +444,6 @@ async function checkForChanges() {
 }
 
 // Answers given from the top-bar bell change the guest's copies: reload them.
-const feed = useInvitationsFeed()
 watch(feed.version, () => refetch())
 
 const { lastSync, syncing, failing, refreshNow } = useAutoRefresh(checkForChanges, {
@@ -469,9 +463,17 @@ function toggleCalendar(href: string) {
 
 // --- editing ------------------------------------------------------------------------
 
+/** For new events: the calendar used last, else the default one (def-calendar), else any own calendar. */
 function defaultCalendarHref() {
-  const own = writableCalendars.value.find((c) => !owners.value[c.href])
-  return (own ?? writableCalendars.value[0])?.href ?? ''
+  const writable = writableCalendars.value
+  const own = writable.filter((c) => !owners.value[c.href])
+  const last = readStorage<string>(LAST_CALENDAR_KEY, '')
+  return (
+    writable.find((c) => c.href === last) ??
+    own.find((c) => c.id === 'def-calendar') ??
+    own[0] ??
+    writable[0]
+  )?.href ?? ''
 }
 
 function openEditor(event: EventInstance | null, initial: EventDraft, readOnly = false) {
@@ -573,6 +575,7 @@ async function saveFromEditor(draft: EventDraft) {
     const href = current.event
       ? await caldav.updateEvent(current.event, draft, current.initial)
       : await caldav.createEvent(draft)
+    writeStorage(LAST_CALENDAR_KEY, draft.calendarHref)
     const before = current.initial.guests.map((g) => g.id).sort().join()
     const after = draft.guests.map((g) => g.id).sort().join()
     if (before !== after) {
