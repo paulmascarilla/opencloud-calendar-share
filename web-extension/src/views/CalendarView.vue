@@ -81,6 +81,7 @@
       :initial="editor.initial"
       :calendars="writableCalendars"
       :read-only="editor.readOnly"
+      :modified-occurrence="editor.modifiedOccurrence"
       :saving="saving"
       :me-id="meId"
       :can-respond="!!editor.event && isMyInvitation(editor.event)"
@@ -179,6 +180,8 @@ const editor = ref<{
   event: EventInstance | null
   initial: EventDraft
   readOnly: boolean
+  /** A recurring occurrence changed on its own: edits apply to it alone */
+  modifiedOccurrence: boolean
 } | null>(null)
 
 const meId = computed(() => userStore.user?.id ?? '')
@@ -473,7 +476,16 @@ function defaultCalendarHref() {
 
 function openEditor(event: EventInstance | null, initial: EventDraft, readOnly = false) {
   confirmingDelete.value = false
-  editor.value = { key: Date.now(), event, initial, readOnly }
+  const key = Date.now()
+  editor.value = { key, event, initial, readOnly, modifiedOccurrence: false }
+  if (event?.recurring) {
+    caldav
+      .isModified(event)
+      .then((modified) => {
+        if (editor.value?.key === key) editor.value.modifiedOccurrence = modified
+      })
+      .catch(() => {})
+  }
 }
 
 function emptyDraft(start: Date, end: Date, allDay: boolean): EventDraft {
@@ -538,11 +550,13 @@ function onEventClick(info: EventClickArg) {
 async function onEventMoved(info: EventDropArg | EventResizeDoneArg) {
   const instance = info.event.extendedProps.instance as EventInstance
   const start = info.event.start!
+  const oldStart = info.oldEvent.start!
   try {
+    // Only the times change: the texts stay as stored, even if they changed elsewhere since the last refresh.
     await caldav.updateEvent(
-      instance.href,
+      instance,
       draftOf(instance, start, endOf(start, info.event.end, info.event.allDay), info.event.allDay),
-      true
+      draftOf(instance, oldStart, endOf(oldStart, info.oldEvent.end, info.oldEvent.allDay), info.oldEvent.allDay)
     )
     refetch()
   } catch (error) {
@@ -557,7 +571,7 @@ async function saveFromEditor(draft: EventDraft) {
   saving.value = true
   try {
     const href = current.event
-      ? await caldav.updateEvent(current.event.href, draft, !current.event.recurring)
+      ? await caldav.updateEvent(current.event, draft, current.initial)
       : await caldav.createEvent(draft)
     const before = current.initial.guests.map((g) => g.id).sort().join()
     const after = draft.guests.map((g) => g.id).sort().join()

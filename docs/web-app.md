@@ -17,8 +17,12 @@ styling is in `src/calendar.css`.
 - **Guests:** add people in the editor (see [invitations](invitations.md)). Invitations carry a status mark before
   their title: ○ awaiting answer, ◐ maybe, ● accepted, red ○ declined.
 - **Read-only cases:** shared calendars without write access open in a read-only dialog. Recurring events are
-  shown expanded; their text is edited for the whole series, and their dates are changed in a CalDAV client.
-- **Concurrent edits:** writes use `If-Match` ETags, so a change made elsewhere is reported and the view reloads.
+  shown expanded; their text is edited for the whole series, and their dates are changed in a CalDAV client. An
+  occurrence changed on its own in a CalDAV client is edited alone; renaming the series also renames the changed
+  occurrences that still had the series' title.
+- **Concurrent edits:** saving or dragging an event writes only the fields you changed, on top of the latest stored
+  version, so changes made elsewhere in the meantime are kept. Deletes use `If-Match` ETags: a change made elsewhere
+  is reported and the view reloads.
 - **Auto refresh:** every 15 s while the tab is visible, and as soon as it comes back, one PROPFIND reads each
   calendar's `getctag`. Only calendars whose ctag changed are re-fetched. Events are cached per calendar and
   range, so search and tabs filter without network. The toolbar shows the last sync and backs off after failures.
