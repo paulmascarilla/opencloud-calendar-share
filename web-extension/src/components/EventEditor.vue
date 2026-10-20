@@ -36,7 +36,11 @@
           status="passive"
           :title="$gettext('Recurring event')"
           :message="
-            $gettext('Changes apply to the whole series. Dates can only be changed in a calendar app.')
+            modifiedOccurrence
+              ? $gettext(
+                  'This occurrence was changed on its own: changes apply to it only. Dates can only be changed in a calendar app.'
+                )
+              : $gettext('Changes apply to the whole series. Dates can only be changed in a calendar app.')
           "
         />
 
@@ -74,6 +78,7 @@
           <label class="field">
             <span>{{ $gettext('Start') }}</span>
             <input
+              :key="allDay ? 'start-date' : 'start-time'"
               v-model="startInput"
               :type="allDay ? 'date' : 'datetime-local'"
               :disabled="readOnly || timesLocked"
@@ -83,6 +88,7 @@
           <label class="field">
             <span>{{ $gettext('End') }}</span>
             <input
+              :key="allDay ? 'end-date' : 'end-time'"
               v-model="endInput"
               :type="allDay ? 'date' : 'datetime-local'"
               :disabled="readOnly || timesLocked"
@@ -140,6 +146,8 @@ const props = defineProps<{
   initial: EventDraft
   calendars: CalendarSource[]
   readOnly: boolean
+  /** A recurring occurrence changed on its own: edits apply to it alone */
+  modifiedOccurrence?: boolean
   saving: boolean
   meId: string
   /** The event is the current user's own copy of an invitation */

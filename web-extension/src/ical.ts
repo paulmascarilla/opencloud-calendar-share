@@ -27,6 +27,8 @@ export interface EventInstance {
   location: string
   description: string
   recurring: boolean
+  /** Which occurrence of a series this is (see {@link occurrenceId}), null for a single event */
+  recurrenceId: string | null
   organizer: Person | null
   guests: Guest[]
   /** Set on a guest's copy of an invitation: path of the organizer's event */
@@ -51,12 +53,12 @@ export interface EventDraft {
 
 /** Turns one calendar-data payload (expanded by the server) into displayable occurrences. */
 export function parseInstances(ics: string, href: string, etag: string, calendarHref: string): EventInstance[] {
-  const vcalendar = new ICAL.Component(ICAL.parse(ics))
+  const vcalendar = new ICAL.Component(ICAL.parse(withDateRecurrenceIds(ics)))
   registerTimezones(vcalendar)
   const invitationFrom = (vcalendar.getFirstPropertyValue('x-oc-organizer-href') as string | null) ?? null
   return vcalendar.getAllSubcomponents('vevent').map((vevent) => {
     const event = new ICAL.Event(vevent)
-    const recurrenceId = vevent.getFirstPropertyValue('recurrence-id')
+    const recurrenceId = occurrenceId(vevent)
     const allDay = event.startDate.isDate
     return {
       key: `${href}#${recurrenceId ?? ''}`,
@@ -73,6 +75,7 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
       location: event.location || '',
       description: original(vevent, 'x-oc-description') ?? (event.description || ''),
       recurring: recurrenceId !== null,
+      recurrenceId,
       organizer: person(vevent.getFirstProperty('organizer')),
       guests: vevent
         .getAllProperties('attendee')
@@ -85,6 +88,23 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
       color: (vevent.getFirstPropertyValue('color') as string | null) ?? null
     }
   })
+}
+
+/**
+ * Radicale's expand writes the RECURRENCE-ID of all-day occurrences as `RECURRENCE-ID:20261020`, without
+ * VALUE=DATE: ical.js reads it as a broken date-time and throws.
+ */
+function withDateRecurrenceIds(ics: string) {
+  return ics.replace(/^RECURRENCE-ID([^:\r\n]*):(\d{8})(?=\r?$)/gim, (line, params: string, date: string) =>
+    /;VALUE=/i.test(params) ? line : `RECURRENCE-ID${params};VALUE=DATE:${date}`
+  )
+}
+
+/** RECURRENCE-ID as YYYY-MM-DD or a UTC ISO date-time, comparable between expanded and stored objects. */
+function occurrenceId(vevent: ICAL.Component): string | null {
+  const time = vevent.getFirstPropertyValue('recurrence-id') as ICAL.Time | null
+  if (!time) return null
+  return time.isDate ? time.toString() : time.toJSDate().toISOString()
 }
 
 function original(vevent: ICAL.Component, name: string) {
@@ -120,34 +140,77 @@ export function newEventIcs(draft: EventDraft, uid: string) {
   vevent.addPropertyWithValue('uid', uid)
   vevent.addPropertyWithValue('created', ICAL.Time.now())
   vcalendar.addSubcomponent(vevent)
-  applyDraft(vevent, draft, true)
-  return vcalendar.toString()
-}
-
-/** Applies ``draft`` to the stored object. For recurring events only the series' texts change. */
-export function updatedEventIcs(ics: string, draft: EventDraft, changeTimes: boolean) {
-  const vcalendar = new ICAL.Component(ICAL.parse(ics))
-  const master = vcalendar.getAllSubcomponents('vevent').find((v) => !v.hasProperty('recurrence-id'))
-  if (!master) throw new Error('no master VEVENT')
-  applyDraft(master, draft, changeTimes)
-  return vcalendar.toString()
-}
-
-function applyDraft(vevent: ICAL.Component, draft: EventDraft, changeTimes: boolean) {
+  for (const [name, field] of TEXTS) setText(vevent, name, draft[field] ?? '')
   const now = ICAL.Time.now()
-  setText(vevent, 'summary', draft.title)
-  setText(vevent, 'location', draft.location)
-  setText(vevent, 'description', draft.description)
-  setText(vevent, 'color', draft.color ?? '')
   vevent.updatePropertyWithValue('dtstamp', now)
   vevent.updatePropertyWithValue('last-modified', now)
-  const sequence = Number(vevent.getFirstPropertyValue('sequence') ?? -1)
-  vevent.updatePropertyWithValue('sequence', sequence + 1)
-  if (!changeTimes) return
-
-  vevent.removeAllProperties('duration')
+  vevent.updatePropertyWithValue('sequence', 0)
   setTime(vevent, 'dtstart', toIcalTime(draft.start, draft.allDay))
   setTime(vevent, 'dtend', toIcalTime(draft.end, draft.allDay))
+  return vcalendar.toString()
+}
+
+const TEXTS = [
+  ['summary', 'title'],
+  ['location', 'location'],
+  ['description', 'description'],
+  ['color', 'color']
+] as const
+
+/**
+ * Applies to the stored object what changed between ``base`` (the event as the user saw it) and ``draft``.
+ * Fields the user left alone keep the stored values, which may have changed elsewhere in the meantime.
+ *
+ * For a recurring event, ``recurrenceId`` is the occurrence the user edited: an occurrence changed on its own
+ * (its own VEVENT) is edited alone; otherwise the series' texts change, and its times never do.
+ */
+export function updatedEventIcs(ics: string, draft: EventDraft, base: EventDraft, recurrenceId: string | null = null) {
+  const vcalendar = new ICAL.Component(ICAL.parse(ics))
+  registerTimezones(vcalendar)
+  const vevents = vcalendar.getAllSubcomponents('vevent')
+  const override = recurrenceId ? vevents.find((v) => occurrenceId(v) === recurrenceId) : undefined
+  const master = vevents.find((v) => !v.hasProperty('recurrence-id'))
+  const target = override ?? master
+  if (!target) throw new Error('no master VEVENT')
+
+  const texts = TEXTS.filter(([, field]) => (draft[field] ?? '') !== (base[field] ?? ''))
+  if (target === master) {
+    // Occurrences changed on their own follow the series where they still had its texts.
+    for (const occurrence of vevents.filter((v) => v !== master)) {
+      for (const [name, field] of texts) {
+        if (text(occurrence, name) === text(master, name)) setText(occurrence, name, draft[field] ?? '')
+      }
+    }
+  }
+  for (const [name, field] of texts) setText(target, name, draft[field] ?? '')
+
+  const timesChanged =
+    draft.allDay !== base.allDay ||
+    draft.start.getTime() !== base.start.getTime() ||
+    draft.end.getTime() !== base.end.getTime()
+  if (timesChanged && !recurrenceId) {
+    target.removeAllProperties('duration')
+    setTime(target, 'dtstart', toIcalTime(draft.start, draft.allDay))
+    setTime(target, 'dtend', toIcalTime(draft.end, draft.allDay))
+  }
+
+  const now = ICAL.Time.now()
+  target.updatePropertyWithValue('dtstamp', now)
+  target.updatePropertyWithValue('last-modified', now)
+  const sequence = Number(target.getFirstPropertyValue('sequence') ?? -1)
+  target.updatePropertyWithValue('sequence', sequence + 1)
+  return vcalendar.toString()
+}
+
+/** Whether the stored object holds its own VEVENT for this occurrence (changed on its own in a calendar app). */
+export function isModifiedOccurrence(ics: string, recurrenceId: string) {
+  const vcalendar = new ICAL.Component(ICAL.parse(ics))
+  registerTimezones(vcalendar)
+  return vcalendar.getAllSubcomponents('vevent').some((v) => occurrenceId(v) === recurrenceId)
+}
+
+function text(vevent: ICAL.Component, name: string) {
+  return String(vevent.getFirstPropertyValue(name) ?? '')
 }
 
 function setText(vevent: ICAL.Component, name: string, value: string) {

@@ -1,6 +1,6 @@
 import { useClientService, useConfigStore, useUserStore } from '@opencloud-eu/web-pkg'
 import { unref } from 'vue'
-import { EventDraft, EventInstance, newEventIcs, parseInstances, updatedEventIcs } from '../ical'
+import { EventDraft, EventInstance, isModifiedOccurrence, newEventIcs, parseInstances, updatedEventIcs } from '../ical'
 
 export type { EventDraft, EventInstance }
 
@@ -110,7 +110,12 @@ export function useCaldav() {
       if (!ics) continue
       const href = decodeURIComponent(text(response, DAV_NS, 'href'))
       const etag = text(response, DAV_NS, 'getetag')
-      events.push(...parseInstances(ics, href, etag, calendar.href))
+      try {
+        events.push(...parseInstances(ics, href, etag, calendar.href))
+      } catch (error) {
+        // One unreadable event must not hide the rest of the calendar.
+        console.warn(`calendar: skipping ${href}`, error)
+      }
     }
     return events
   }
@@ -126,10 +131,14 @@ export function useCaldav() {
     return href
   }
 
-  /** Updates the event stored at ``href``, moving it when ``draft.calendarHref`` differs. Returns its href. */
-  async function updateEvent(href: string, draft: EventDraft, changeTimes: boolean) {
+  /**
+   * Applies to ``event`` what changed from ``base`` to ``draft``, moving it when ``draft.calendarHref`` differs.
+   * Returns its href.
+   */
+  async function updateEvent(event: EventInstance, draft: EventDraft, base: EventDraft) {
+    const href = event.href
     const { data, headers } = await dav('GET', href)
-    const ics = updatedEventIcs(data, draft, changeTimes)
+    const ics = updatedEventIcs(data, draft, base, event.recurrenceId)
     const etag = headers.etag as string | undefined
 
     if (draft.calendarHref && !href.startsWith(draft.calendarHref)) {
@@ -180,11 +189,18 @@ export function useCaldav() {
     }
   }
 
+  /** Whether this occurrence of a series was changed on its own (edits then apply to it alone). */
+  async function isModified(event: EventInstance) {
+    if (!event.recurrenceId) return false
+    const { data } = await dav('GET', event.href)
+    return isModifiedOccurrence(data, event.recurrenceId)
+  }
+
   async function deleteEvent(href: string, etag?: string) {
     await dav('DELETE', href, undefined, etag ? { 'If-Match': etag } : {})
   }
 
-  return { listCalendars, createCalendar, fetchEvents, getEvent, createEvent, updateEvent, deleteEvent }
+  return { listCalendars, createCalendar, fetchEvents, getEvent, createEvent, updateEvent, isModified, deleteEvent }
 }
 
 function xmlEscape(text: string) {
