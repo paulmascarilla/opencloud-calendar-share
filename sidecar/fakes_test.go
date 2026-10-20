@@ -446,9 +446,17 @@ const (
 	carolID = "0d2c1b9e-6f1a-4f43-9d55-0a7b6c3e8f21"
 )
 
+// graphHidesMail makes the fake Graph behave as for a non-admin service account: "mail" is only
+// shown to its owner (GET /me).
+var graphHidesMail bool
+
 func newFakeGraph() *httptest.Server {
 	view := func(u fakeUser) map[string]any {
-		return map[string]any{"id": u.ID, "displayName": u.Display, "onPremisesSamAccountName": u.Name, "mail": u.Mail}
+		v := map[string]any{"id": u.ID, "displayName": u.Display, "onPremisesSamAccountName": u.Name, "mail": u.Mail}
+		if graphHidesMail {
+			delete(v, "mail")
+		}
+		return v
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
@@ -456,6 +464,17 @@ func newFakeGraph() *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graph/v1.0/me" {
+			name, _, _ := r.BasicAuth()
+			for _, u := range testUsers {
+				if u.Name == name {
+					json.NewEncoder(w).Encode(map[string]any{"id": u.ID, "displayName": u.Display, "mail": u.Mail})
+					return
+				}
+			}
+			w.WriteHeader(401)
+			return
+		}
 		if id, ok := strings.CutPrefix(r.URL.Path, "/graph/v1.0/users/"); ok {
 			if id == graphFailureID {
 				w.WriteHeader(500)

@@ -293,6 +293,12 @@
     center / contain no-repeat;
 }
 
+/* a guest proposed another time: dotted frame until the organizer decides */
+.oc-calendar .fc .oc-ev-proposal {
+  outline: 2px dotted var(--ev, var(--oc-role-primary));
+  outline-offset: 1px;
+}
+
 /* The CSP (font-src 'self') blocks FullCalendar's inline icon font: use text glyphs. */
 .oc-calendar .fc .fc-icon {
   font-family: inherit;

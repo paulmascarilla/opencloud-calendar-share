@@ -6,7 +6,9 @@ package main
 
 import (
 	"errors"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -378,11 +380,66 @@ func (p *Prop) Time() (t time.Time, allDay bool, ok bool) {
 		return t, false, err == nil
 	}
 	loc := time.UTC
-	if tzid := strings.TrimPrefix(p.Param("TZID"), "/"); tzid != "" {
-		if l, err := time.LoadLocation(tzid); err == nil {
-			loc = l
-		}
+	if l := location(p.Param("TZID")); l != nil {
+		loc = l
 	}
 	t, err := time.ParseInLocation("20060102T150405", v, loc)
 	return t.UTC(), false, err == nil
+}
+
+// location finds the zone of a TZID, also behind a prefix such as Evolution's
+// "/freeassociation.sourceforge.net/Europe/Paris". nil when unknown.
+func location(tzid string) *time.Location {
+	parts := strings.Split(strings.Trim(tzid, "/"), "/")
+	for i := range parts {
+		if l, err := time.LoadLocation(strings.Join(parts[i:], "/")); err == nil && parts[i] != "" {
+			return l
+		}
+	}
+	return nil
+}
+
+// span returns when an event starts and ends (DTEND, else DTSTART + DURATION, else one day for
+// an all-day event and no time otherwise), in UTC.
+func span(event *Component) (start, end time.Time, allDay, ok bool) {
+	dtstart := event.Get("DTSTART")
+	if dtstart == nil {
+		return
+	}
+	if start, allDay, ok = dtstart.Time(); !ok {
+		return
+	}
+	end = start
+	if allDay {
+		end = start.AddDate(0, 0, 1)
+	}
+	if dtend := event.Get("DTEND"); dtend != nil {
+		if t, _, good := dtend.Time(); good {
+			end = t
+		}
+	} else if d, good := parseDuration(event.Value("DURATION")); good {
+		end = start.Add(d)
+	}
+	return start, end, allDay, true
+}
+
+var durationRE = regexp.MustCompile(`^([+-]?)P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$`)
+
+// parseDuration reads an RFC 5545 DURATION such as PT1H30M or P1D.
+func parseDuration(v string) (time.Duration, bool) {
+	m := durationRE.FindStringSubmatch(strings.TrimSpace(v))
+	if m == nil || v == "P" {
+		return 0, false
+	}
+	units := []time.Duration{7 * 24 * time.Hour, 24 * time.Hour, time.Hour, time.Minute, time.Second}
+	var d time.Duration
+	for i, unit := range units {
+		if n, err := strconv.Atoi(m[i+2]); err == nil {
+			d += time.Duration(n) * unit
+		}
+	}
+	if m[1] == "-" {
+		d = -d
+	}
+	return d, true
 }

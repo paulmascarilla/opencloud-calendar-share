@@ -17,6 +17,8 @@ styling is in `src/calendar.css`.
 - **Shared calendars:** an event you are invited to shows once, as your own copy, even when you also see the
   organizer's calendar.
 - **Colors:** events are soft tints of their color (RFC 7986 `COLOR`, picked in the editor, else the calendar's color).
+- **Proposals:** a guest proposes another time from their invitation; the organizer accepts or declines it in the
+  event (dotted frame while one is pending). See [proposing another time](invitations.md#proposing-another-time).
 - **Guests:** add people in the editor (see [invitations](invitations.md)). Invitations carry a status mark before
   their title: ○ awaiting answer, ◐ maybe, ● accepted, red ○ declined.
 - **Read-only cases:** shared calendars without write access open in a read-only dialog. Recurring events are

@@ -19,6 +19,9 @@
 //	GET    /v1/calendars/{cal}/events/{event}/guests   organizer and guests of an event, with their answers
 //	PUT    /v1/calendars/{cal}/events/{event}/guests   invite people  body: {"guests": ["bob", "carol@example.org", "<id>"]}
 //	POST   /v1/calendars/{cal}/events/{event}/respond  answer an invitation  body: {"response": "accepted"|"tentative"|"declined"}
+//	POST   /v1/calendars/{cal}/events/{event}/propose  propose another time for an invitation  body: {"start": ISO, "end": ISO}
+//	POST   /v1/calendars/{cal}/events/{event}/proposals/{guest}/accept   move the event to a guest's proposal
+//	POST   /v1/calendars/{cal}/events/{event}/proposals/{guest}/decline  dismiss it
 //	GET    /v1/invitations                         events the caller organizes / is invited to
 //	GET    /v1/invitations/pending                 upcoming invitations the caller has not answered
 //	GET    /healthz
@@ -126,7 +129,8 @@ type Server struct {
 	agent  *Agent
 
 	emailMu    sync.Mutex
-	emailCache map[string]emailHit // bounded by maxEmailCache
+	emailCache map[string]emailHit  // bounded by maxEmailCache
+	mailSeen   map[string]time.Time // when each caller's own e-mail address was last read
 }
 
 // maxEmailCache bounds the e-mail lookup cache: addresses come from events anyone can write.
@@ -146,6 +150,7 @@ func NewServer(cfg Config) (*Server, error) {
 		cfg:        cfg,
 		client:     &http.Client{Transport: transport, Timeout: 10 * time.Second},
 		emailCache: map[string]emailHit{},
+		mailSeen:   map[string]time.Time{},
 	}
 	var resolveEmail, resolveID func(string) (*User, error)
 	if cfg.OCServiceAuth != "" { // background lookups have no caller token: needs OC_SERVICE_AUTH
@@ -393,6 +398,7 @@ type User struct {
 	ID          string
 	DisplayName string
 	Username    *string
+	Mail        string // empty when Graph hides it (non-admin callers)
 }
 
 func (u *User) view() Obj {
@@ -432,7 +438,8 @@ func userView(u map[string]any) *User {
 	if name == "" {
 		name = id
 	}
-	user := &User{ID: id, DisplayName: name}
+	mail, _ := u["mail"].(string)
+	user := &User{ID: id, DisplayName: name, Mail: mail}
 	if sam, ok := u["onPremisesSamAccountName"].(string); ok {
 		user.Username = &sam
 	}
@@ -505,6 +512,33 @@ func (s *Server) resolveID(id string) (*User, error) {
 		return nil, nil
 	}
 	return s.cachedLookup("id:"+id, id)
+}
+
+// learnMail reads the caller's own e-mail address (Graph shows it to its owner, not to a non-admin
+// service account), at most every 6 hours, so that invitation copies can name them by e-mail.
+func (s *Server) learnMail(user, auth string) {
+	s.emailMu.Lock()
+	if time.Since(s.mailSeen[user]) < 6*time.Hour {
+		s.emailMu.Unlock()
+		return
+	}
+	if len(s.mailSeen) >= maxEmailCache {
+		clear(s.mailSeen)
+	}
+	s.mailSeen[user] = time.Now()
+	s.emailMu.Unlock()
+	go func() {
+		status, data, err := s.graphGet("/me", auth)
+		if err != nil || status != 200 {
+			return
+		}
+		if id, _ := data["id"].(string); id != user {
+			return
+		}
+		if mail, _ := data["mail"].(string); mail != "" && s.agent != nil {
+			s.agent.LearnMail(user, mail)
+		}
+	}()
 }
 
 // resolveEmail finds the OpenCloud user of an e-mail address (service account search),
@@ -875,6 +909,9 @@ func (s *Server) route(r *http.Request) (any, int, error) {
 		return nil, 0, apiErr(401, "not authenticated")
 	}
 	auth := r.Header.Get("Authorization")
+	if auth != "" {
+		s.learnMail(user, auth)
+	}
 	var parts []string
 	for _, p := range strings.Split(strings.Trim(path, "/"), "/") {
 		parts = append(parts, unescape(p))
@@ -967,6 +1004,17 @@ func (s *Server) route(r *http.Request) (any, int, error) {
 			return nil, 0, err
 		}
 		view, err := s.respond(user, parts[1], parts[3], body)
+		return view, 200, err
+	case is("POST", "calendars", "*", "events", "*", "propose"):
+		body, err := readBody(r)
+		if err != nil {
+			return nil, 0, err
+		}
+		view, err := s.propose(user, parts[1], parts[3], body)
+		return view, 200, err
+	case is("POST", "calendars", "*", "events", "*", "proposals", "*", "accept"),
+		is("POST", "calendars", "*", "events", "*", "proposals", "*", "decline"):
+		view, err := s.decideProposal(user, parts[1], parts[3], parts[5], parts[6] == "accept")
 		return view, 200, err
 	case is("GET", "invitations"):
 		return s.agent.ListFor(user), 200, nil

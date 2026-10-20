@@ -5,6 +5,7 @@ package main
 import (
 	"strconv"
 	"strings"
+	"time"
 )
 
 // loadEvent GETs an event as user (works for own calendars and mounted shares).
@@ -67,9 +68,28 @@ func guestsView(master *Component) Obj {
 		if !ok {
 			response = "pending"
 		}
-		guests = append(guests, Obj{{"id", uid}, {"displayName", a.Param("CN")}, {"response", response}})
+		guests = append(guests, Obj{{"id", uid}, {"displayName", a.Param("CN")}, {"response", response},
+			{"proposal", proposalView(a)}})
 	}
 	return Obj{{"organizer", organizer}, {"guests", guests}}
+}
+
+// proposalView is the time a guest proposed instead (ISO 8601 dates), or nil.
+func proposalView(attendee *Prop) any {
+	start, end := attendee.Param(ProposedStart), attendee.Param(ProposedEnd)
+	if start == "" || end == "" {
+		return nil
+	}
+	iso := func(v string) string {
+		if t, err := time.Parse("20060102T150405Z", v); err == nil {
+			return t.Format(time.RFC3339)
+		}
+		if t, err := time.Parse("20060102", v); err == nil {
+			return t.Format("2006-01-02")
+		}
+		return v
+	}
+	return Obj{{"start", iso(start)}, {"end", iso(end)}, {"allDay", len(start) == 8}}
 }
 
 func calAddress(u *User) *Prop {
@@ -110,18 +130,8 @@ func (s *Server) putGuests(user, cal, event string, body map[string]any, authHea
 	if organizerID == "" {
 		organizerID = user
 	}
-	// A guest's copy is managed by the agent; in a shared calendar, the calendar owner
-	// (or whoever organizes the event) may edit the guests.
-	forbidden := calObj.Has(OrganizerHref)
-	if !forbidden && organizer != nil && organizerID != user {
-		owner, err := s.ownerOf(path, user)
-		if err != nil {
-			return nil, err
-		}
-		forbidden = owner != user
-	}
-	if forbidden {
-		return nil, apiErr(403, "only the organizer can change the guest list")
+	if err := s.checkOrganizer(user, path, calObj, master, "only the organizer can change the guest list"); err != nil {
+		return nil, err
 	}
 
 	var wantedIDs []string
@@ -193,6 +203,128 @@ func (s *Server) putGuests(user, cal, event string, body map[string]any, authHea
 		sequence, _ = strconv.Atoi(strings.TrimSpace(removed[0].Value))
 	}
 	master.Add(&Prop{Name: "SEQUENCE", Value: strconv.Itoa(sequence + 1)})
+	if err := s.storeEvent(user, path, calObj, etag); err != nil {
+		return nil, err
+	}
+	return guestsView(master), nil
+}
+
+// checkOrganizer: a guest's copy is managed by the agent; in a shared calendar, the calendar
+// owner (or whoever organizes the event) may manage its guests.
+func (s *Server) checkOrganizer(user, path string, calObj, master *Component, message string) error {
+	forbidden := calObj.Has(OrganizerHref)
+	if organizer := master.Get("ORGANIZER"); !forbidden && organizer != nil && userID(organizer) != "" && userID(organizer) != user {
+		owner, err := s.ownerOf(path, user)
+		if err != nil {
+			return err
+		}
+		forbidden = owner != user
+	}
+	if forbidden {
+		return apiErr(403, "%s", message)
+	}
+	return nil
+}
+
+// propose records another time for an invitation, on the organizer's event (the guest cannot
+// write it, the agent does).
+func (s *Server) propose(user, cal, event string, body map[string]any) (Obj, error) {
+	start, end, err := parseProposal(body)
+	if err != nil {
+		return nil, err
+	}
+	path, _, master, _, err := s.loadEvent(user, cal, event)
+	if err != nil {
+		return nil, err
+	}
+	masterPath := s.agent.MasterOf(path)
+	if masterPath == "" {
+		return nil, apiErr(403, "only a guest can propose another time")
+	}
+	if master.Has("RRULE") || master.Has("RDATE") {
+		return nil, apiErr(400, "cannot propose another time for a recurring event")
+	}
+	found, err := s.agent.Propose(masterPath, user, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, apiErr(404, "you are not invited to this event")
+	}
+	proposal := &Prop{}
+	proposal.SetParam(ProposedStart, start)
+	proposal.SetParam(ProposedEnd, end)
+	return Obj{{"proposal", proposalView(proposal)}}, nil
+}
+
+// parseProposal reads {"start", "end"}: two dates (all day, end exclusive) or two date-times.
+func parseProposal(body map[string]any) (start, end string, err error) {
+	rawStart, _ := body["start"].(string)
+	rawEnd, _ := body["end"].(string)
+	parse := func(v string) (time.Time, bool, bool) {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			return t, true, true
+		}
+		t, err := time.Parse(time.RFC3339, v)
+		return t.UTC(), false, err == nil
+	}
+	s, sDate, ok1 := parse(rawStart)
+	e, eDate, ok2 := parse(rawEnd)
+	if !ok1 || !ok2 || sDate != eDate {
+		return "", "", apiErr(400, "start and end must be two dates or two date-times (ISO 8601)")
+	}
+	if !e.After(s) || e.Sub(s) > 366*24*time.Hour || s.Year() < 1900 || e.Year() > 2200 {
+		return "", "", apiErr(400, "the end must be after the start, within a year")
+	}
+	return icalTime(s, sDate), icalTime(e, eDate), nil
+}
+
+// decideProposal accepts a guest's proposal (the event moves there, other proposals are
+// dropped) or declines it.
+func (s *Server) decideProposal(user, cal, event, guest string, accept bool) (Obj, error) {
+	path, calObj, master, etag, err := s.loadEvent(user, cal, event)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkOrganizer(user, path, calObj, master, "only the organizer decides on proposals"); err != nil {
+		return nil, err
+	}
+	var proposer *Prop
+	for _, a := range master.All("ATTENDEE") {
+		if userID(a) == guest && a.Param(ProposedStart) != "" && a.Param(ProposedEnd) != "" {
+			proposer = a
+		}
+	}
+	if proposer == nil {
+		return nil, apiErr(404, "no proposal from this guest")
+	}
+	if accept {
+		start, end := proposer.Param(ProposedStart), proposer.Param(ProposedEnd)
+		master.Remove("DTSTART")
+		master.Remove("DTEND")
+		master.Remove("DURATION")
+		for name, value := range map[string]string{"DTSTART": start, "DTEND": end} {
+			p := &Prop{Name: name, Value: value}
+			if len(value) == 8 {
+				p.SetParam("VALUE", "DATE")
+			}
+			master.Add(p)
+		}
+		for _, a := range master.All("ATTENDEE") {
+			a.DelParam(ProposedStart)
+			a.DelParam(ProposedEnd)
+		}
+		proposer.SetParam("PARTSTAT", "ACCEPTED")
+		proposer.DelParam("RSVP")
+		sequence := 0
+		if removed := master.Remove("SEQUENCE"); len(removed) > 0 {
+			sequence, _ = strconv.Atoi(strings.TrimSpace(removed[0].Value))
+		}
+		master.Add(&Prop{Name: "SEQUENCE", Value: strconv.Itoa(sequence + 1)})
+	} else {
+		proposer.DelParam(ProposedStart)
+		proposer.DelParam(ProposedEnd)
+	}
 	if err := s.storeEvent(user, path, calObj, etag); err != nil {
 		return nil, err
 	}

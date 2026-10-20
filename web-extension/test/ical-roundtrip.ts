@@ -148,6 +148,18 @@ assert.deepEqual(occ.map((e) => [e.title, e.start]), [['Déjeuner équipe', '202
   ['Déjeuner équipe', '2026-10-20T12:00:00.000Z'], ['Déjeuner client (Acme)', '2026-10-21T13:00:00.000Z']])
 console.log('ok 8 edit one changed occurrence, or the series')
 
+// 9. a guest's copy: proposals are read, and the organizer's (empty) description is shown, not the answer links
+const guestCopy = vcalendar([
+  'UID:copy-1', 'DTSTAMP:20261001T000000Z', 'DTSTART:20261112T090000Z', 'DTEND:20261112T100000Z', 'SUMMARY:Revue',
+  'DESCRIPTION:—\\nInvitation de alice.\\nAccepter : https://cloud.example/calendar/respond', 'X-OC-SUMMARY:Revue',
+  `ORGANIZER;CN=alice;X-OC-USERID=${ALICE_ID}:mailto:alice@example.org`,
+  `ATTENDEE;CN=bob;PARTSTAT=NEEDS-ACTION;X-OC-USERID=${BOB_ID};X-OC-PROPOSED-START=20261113;X-OC-PROPOSED-END=20261114:mailto:bob@example.org`
+]).replace('PRODID:-//test//EN', 'PRODID:-//test//EN\r\nX-OC-ORGANIZER-HREF:/alice/def-calendar/copy-1.ics')
+const [copied] = parseInstances(guestCopy, '/caldav/bob/def-calendar/copy-1.ics', '', '/caldav/bob/def-calendar/')
+assert.equal(copied.description, '')
+assert.deepEqual(copied.guests.map((g) => [g.name, g.proposal]), [['bob', { start: '2026-11-13', end: '2026-11-14', allDay: true }]])
+console.log('ok 9 guest copy: proposal, no generated description')
+
 // cleanup
 for (const h of [href, `${aliceCal}${bobUid}.ics`, daily, merged, series]) await call('alice', 'DELETE', h)
 await call('alice', 'DELETE', '/calshare/v1/calendars/def-calendar/shares/bob')

@@ -88,6 +88,8 @@
       @save="saveFromEditor"
       @delete="confirmingDelete = true"
       @respond="respondFromEditor"
+      @propose="proposeFromEditor"
+      @decide="decideFromEditor"
       @close="editor = null"
     />
 
@@ -134,7 +136,7 @@ import frLocale from '@fullcalendar/core/locales/fr'
 import { useMessages, useRoute, useUserStore } from '@opencloud-eu/web-pkg'
 import { useGettext } from 'vue3-gettext'
 import { CalendarSource, ConflictError, EventDraft, EventInstance, useCaldav } from '../composables/useCaldav'
-import { Share, useCalshare } from '../composables/useCalshare'
+import { apiErrorMessage, Share, useCalshare } from '../composables/useCalshare'
 import { useAutoRefresh } from '../composables/useAutoRefresh'
 import { useInvitationsFeed } from '../invitationsFeed'
 import { dayHeaderContent, eventContent, eventDidMount, nowIndicatorContent } from '../calendarRender'
@@ -303,6 +305,7 @@ function toFullCalendar(event: EventInstance, calendar: CalendarSource): EventIn
     classNames.push('oc-ev-invitation', `oc-ev-${response}`)
   } else if (event.guests.length) {
     classNames.push('oc-ev-with-guests')
+    if (event.guests.some((g) => g.proposal)) classNames.push('oc-ev-proposal')
   }
   return {
     id: event.key,
@@ -615,6 +618,42 @@ async function respondFromEditor(response: 'accepted' | 'tentative' | 'declined'
     refetch()
   } catch (error) {
     reportError(error, $gettext('Could not send your answer'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function proposeFromEditor(proposal: { start: string; end: string }) {
+  const event = editor.value?.event
+  if (!event) return
+  saving.value = true
+  try {
+    const { calendar, file } = splitHref(event.href)
+    await calshare.propose(calendar, file, proposal.start, proposal.end)
+    editor.value = null
+    showMessage({ title: $gettext('Your proposal was sent to the organizer') })
+    refetch()
+  } catch (error) {
+    showErrorMessage({ title: $gettext('Could not send your proposal'), desc: apiErrorMessage(error), errors: [error as Error] })
+  } finally {
+    saving.value = false
+  }
+}
+
+async function decideFromEditor(guest: string, accept: boolean) {
+  const event = editor.value?.event
+  if (!event) return
+  saving.value = true
+  try {
+    const { calendar, file } = splitHref(event.href)
+    await calshare.decideProposal(calendar, file, guest, accept)
+    editor.value = null
+    showMessage({
+      title: accept ? $gettext('The event was moved to the proposed time') : $gettext('Proposal declined')
+    })
+    refetch()
+  } catch (error) {
+    reportError(error, $gettext('Could not answer the proposal'))
   } finally {
     saving.value = false
   }
