@@ -170,6 +170,14 @@ func NewServer(cfg Config) (*Server, error) {
 			r.SetXForwarded()
 			r.Out.Header.Del(SecretHeader)
 		},
+		// Radicale sends Last-Modified without Cache-Control, which lets browsers reuse an old GET
+		// of an event changed elsewhere: its stale ETag then makes every If-Match write fail.
+		ModifyResponse: func(resp *http.Response) error {
+			if resp.Header.Get("Cache-Control") == "" {
+				resp.Header.Set("Cache-Control", "private, no-cache")
+			}
+			return nil
+		},
 		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
 	return s, nil
