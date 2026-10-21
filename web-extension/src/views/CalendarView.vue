@@ -337,6 +337,8 @@ function baseOptions(): CalendarOptions {
     firstDay: 1,
     nowIndicator: true,
     dayMaxEvents: true,
+    // Events at the same time sit side by side: overlapping, the later one hid the other's title.
+    slotEventOverlap: false,
     scrollTime: '08:00:00',
     slotLabelFormat: { hour: 'numeric', minute: '2-digit', omitZeroMinute: true },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit' },
