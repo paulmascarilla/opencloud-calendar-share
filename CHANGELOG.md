@@ -2,6 +2,16 @@
 
 Generated from the Conventional Commits by the `tag` workflow (`.github/workflows/tag.yaml`).
 
+## [0.4.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.3.0...v0.4.0) (2026-10-21)
+
+### Features
+
+- see when people are busy, and public events (#7) ([d4cffe7](https://github.com/paulmascarilla/opencloud-calendar-share/commit/d4cffe7e980b1293e0b0e4c93482687a3bd6caa8))
+
+### Bug fixes
+
+- **web:** events at the same time sit side by side (#6) ([872e9fb](https://github.com/paulmascarilla/opencloud-calendar-share/commit/872e9fb298cddb9e34b29962ad53d3c03447ffc1))
+
 ## [0.3.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.2.0...v0.3.0) (2026-10-21)
 
 ### Features
