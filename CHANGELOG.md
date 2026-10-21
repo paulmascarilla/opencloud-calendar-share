@@ -2,6 +2,18 @@
 
 Generated from the Conventional Commits by the `tag` workflow (`.github/workflows/tag.yaml`).
 
+## [0.3.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.2.0...v0.3.0) (2026-10-21)
+
+### Features
+
+- guests propose another time; edits to their copy are undone (#5) ([165b87b](https://github.com/paulmascarilla/opencloud-calendar-share/commit/165b87b34aea22dbb69f1a9441515b5a4b692b75))
+
+### Bug fixes
+
+- **web:** invitation dates, duplicate shared events, default calendar, phone headers (#4) ([3d46e1c](https://github.com/paulmascarilla/opencloud-calendar-share/commit/3d46e1c391ddf60d70f68e701d68dda1ca4e9079))
+- **web:** recurring all-day events, lost updates, changed occurrences, all-day toggle (#3) ([08d3b85](https://github.com/paulmascarilla/opencloud-calendar-share/commit/08d3b855982f700a95d8817bfed6c4193eb7c869))
+- stale ETag when an event changed elsewhere (#2) ([5ca24d1](https://github.com/paulmascarilla/opencloud-calendar-share/commit/5ca24d175358d6fd5b1f0b5abad6fe4d54433d8c))
+
 ## [0.2.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.1.0...v0.2.0) (2026-10-17)
 
 ### Features
