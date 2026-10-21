@@ -55,6 +55,7 @@ services:
       OC_URL: ${CALENDAR_OPENCLOUD_URL:-http://opencloud:9200}
       OC_INSECURE: ${INSECURE:-false}
       AUTO_ACCEPT: ${CALENDAR_AUTO_ACCEPT:-true}
+      FREEBUSY: ${CALENDAR_FREEBUSY:-true}
       PUBLIC_URL: https://${OC_DOMAIN:-cloud.opencloud.test}${TRAEFIK_PORT_HTTPS:+:}${TRAEFIK_PORT_HTTPS:-}
       INVITE_LANGUAGE: ${CALENDAR_LANGUAGE:-en}
       CALDAV_LISTEN: 0.0.0.0:5233

@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -208,6 +209,8 @@ func (f *fakeRadicale) dav(method, user, path string, h http.Header, body []byte
 			return 501, nil, nil
 		}
 		return 207, f.homeListing(user), map[string]string{"Content-Type": "text/xml"}
+	case "REPORT":
+		return f.calendarQuery(real, body)
 	case "MKCALENDAR":
 		if _, exists := f.collections[real]; exists {
 			return 405, nil, nil
@@ -277,6 +280,45 @@ func (f *fakeRadicale) dav(method, user, path string, h http.Header, body []byte
 		return 204, nil, nil
 	}
 	return 405, nil, nil
+}
+
+var timeRangeRE = regexp.MustCompile(`<C:time-range start="(\w+)" end="(\w+)"/>`)
+
+// calendarQuery answers a calendar-query REPORT with the events of collection overlapping its
+// time range. Unlike Radicale, recurring events are not expanded: tests use single events.
+func (f *fakeRadicale) calendarQuery(collection string, body []byte) (int, []byte, map[string]string) {
+	if _, ok := f.collections[collection]; !ok {
+		return 404, nil, nil
+	}
+	m := timeRangeRE.FindSubmatch(body)
+	if m == nil {
+		return 400, nil, nil
+	}
+	from, _ := time.Parse("20060102T150405Z", string(m[1]))
+	to, _ := time.Parse("20060102T150405Z", string(m[2]))
+	var b strings.Builder
+	b.WriteString(`<?xml version='1.0' encoding='utf-8'?>` + "\n" + `<multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">`)
+	for _, p := range sortedKeys(f.items) {
+		if !strings.HasPrefix(p, collection) || strings.Contains(p[len(collection):], "/") {
+			continue
+		}
+		cal, err := ParseICal(f.items[p])
+		if err != nil {
+			continue
+		}
+		overlaps := false
+		for _, event := range cal.Walk("VEVENT") {
+			if start, end, _, ok := span(event); ok && start.Before(to) && end.After(from) {
+				overlaps = true
+			}
+		}
+		if overlaps {
+			fmt.Fprintf(&b, `<response><href>%s</href><propstat><prop><C:calendar-data>%s</C:calendar-data></prop>`+
+				`<status>HTTP/1.1 200 OK</status></propstat></response>`, p, escapeHTML(string(f.items[p])))
+		}
+	}
+	b.WriteString(`</multistatus>`)
+	return 207, []byte(b.String()), map[string]string{"Content-Type": "text/xml"}
 }
 
 func (f *fakeRadicale) homeListing(user string) []byte {

@@ -5,9 +5,9 @@
     :loading="searching"
     :filter="keepServerResults"
     :get-option-label="optionLabel"
-    :label="$gettext('Share with')"
+    :label="label ?? $gettext('Share with')"
     :label-hidden="true"
-    :placeholder="$gettext('Search people by name, username or e-mail')"
+    :placeholder="placeholder ?? $gettext('Search people by name, username or e-mail')"
     class="ext:flex-1 ext:min-w-56"
     @search:input="onSearch"
     @update:model-value="emit('update:modelValue', $event)"
@@ -35,6 +35,8 @@ const props = withDefaults(
   defineProps<{
     modelValue: DirectoryUser | null
     excludeIds?: string[]
+    label?: string
+    placeholder?: string
   }>(),
   { excludeIds: () => [] }
 )

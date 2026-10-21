@@ -59,6 +59,9 @@ spec:
               value: "true"
             - name: AUTO_ACCEPT
               value: "true"
+            # Users see when others are busy (times only, never the events)
+            - name: FREEBUSY
+              value: "true"
             # Links in invitation copies (Accept / Maybe / Decline) point to the web app here
             - name: PUBLIC_URL
               value: https://localhost:9200

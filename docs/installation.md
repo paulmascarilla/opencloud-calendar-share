@@ -34,6 +34,7 @@ Then open **Calendar** in OpenCloud's app menu. CalDAV clients use `https://<OC_
 | `CALENDAR_VERSION` | the release's version | tag of the `calshare` and `web` images |
 | `CALENDAR_LANGUAGE` | `en` | language of the texts added to invitations (`en`, `fr`) |
 | `CALENDAR_AUTO_ACCEPT` | `true` | shared calendars appear at once for the recipient |
+| `CALENDAR_FREEBUSY` | `true` | users see when others are busy (times only, see [Availability](web-app.md#availability)) |
 | `CALENDAR_SERVICE_AUTH` | `""` | `user:app-token` of the [service account](#service-account) (`docker compose exec opencloud opencloud auth-app create …`) |
 | `CALENDAR_OPENCLOUD_URL` | `http://opencloud:9200` | OpenCloud as calshare reaches it (Graph API) |
 | `RADICALE_DOCKER_TAG` | `v3.8.1` | |
@@ -77,6 +78,7 @@ The full list is in [`values.yaml`](../charts/opencloud-calendar-share/values.ya
 | `calshare.opencloudUrl` | `https://opencloud:9200` | in-cluster OpenCloud URL (Graph API) |
 | `calshare.opencloudInsecure` | `false` | skip TLS verification of `opencloudUrl` (self-signed certificates) |
 | `calshare.autoAccept` | `true` | shared calendars appear at once for the recipient |
+| `calshare.freeBusy` | `true` | users see when others are busy (times only, see [Availability](web-app.md#availability)) |
 | `calshare.serviceAccount.existingSecret` | `""` | Secret (`auth` = `user:app-token`) of a plain OpenCloud user, for invitations created in CalDAV clients |
 | `radicale.persistence.existingClaim` | `""` | reuse an existing Radicale volume (otherwise a PVC is created, and kept on uninstall) |
 | `radicale.predefinedCollections` | Contacts, Calendar, Tasks | collections created at a user's first connection |

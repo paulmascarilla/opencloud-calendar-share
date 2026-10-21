@@ -56,6 +56,9 @@ calshare:
   opencloudInsecure: false
   # Shares appear immediately for the recipient (no accept step).
   autoAccept: true
+  # Users see when others are busy (times only, never titles, places or guests): in the event
+  # editor's availability timeline and the "People" overlay of the calendar.
+  freeBusy: true
   # Plain (non-admin) OpenCloud user used to resolve e-mail guests of events created in
   # CalDAV clients. Secret key holds "user:app-token". Leave empty to disable that feature.
   serviceAccount:

@@ -10,8 +10,15 @@
         :calendars="calendars"
         :hidden="hidden"
         :owners="owners"
+        :people="people"
+        :me-id="meId"
+        :people-enabled="freeBusyEnabled"
+        :max-people="MAX_PEOPLE"
         @toggle="toggleCalendar"
         @create="creatingCalendar = true"
+        @add-person="addingPerson = true"
+        @remove-person="removePerson"
+        @toggle-person="togglePerson"
       />
     </aside>
 
@@ -85,12 +92,21 @@
       :saving="saving"
       :me-id="meId"
       :can-respond="!!editor.event && isMyInvitation(editor.event)"
+      :availability="freeBusyEnabled"
       @save="saveFromEditor"
       @delete="confirmingDelete = true"
       @respond="respondFromEditor"
       @propose="proposeFromEditor"
       @decide="decideFromEditor"
       @close="editor = null"
+    />
+
+    <add-person-modal
+      v-if="addingPerson"
+      :exclude-ids="[meId, ...people.map((p) => p.id)]"
+      :default-color="defaultPersonColor"
+      @add="addPerson"
+      @close="addingPerson = false"
     />
 
     <calendar-create-modal
@@ -136,12 +152,16 @@ import frLocale from '@fullcalendar/core/locales/fr'
 import { useMessages, useRoute, useUserStore } from '@opencloud-eu/web-pkg'
 import { useGettext } from 'vue3-gettext'
 import { CalendarSource, ConflictError, EventDraft, EventInstance, useCaldav } from '../composables/useCaldav'
-import { apiErrorMessage, Share, useCalshare } from '../composables/useCalshare'
+import { apiErrorMessage, Availability, isFreeBusyDisabled, Share, useCalshare } from '../composables/useCalshare'
+import type { DirectoryUser } from '../composables/useUserDirectory'
+import type { WatchedPerson } from '../availability'
+import { PALETTE_HEX } from '../palette'
 import { useAutoRefresh } from '../composables/useAutoRefresh'
 import { useInvitationsFeed } from '../invitationsFeed'
 import { dayHeaderContent, eventContent, eventDidMount, nowIndicatorContent } from '../calendarRender'
 import CalendarList from '../components/CalendarList.vue'
 import CalendarCreateModal from '../components/CalendarCreateModal.vue'
+import AddPersonModal from '../components/AddPersonModal.vue'
 import CalendarToolbar from '../components/CalendarToolbar.vue'
 import EventEditor from '../components/EventEditor.vue'
 import FilterTabs from '../components/FilterTabs.vue'
@@ -152,7 +172,22 @@ type Filter = 'all' | 'mine' | 'shared' | 'invitations'
 const HIDDEN_KEY = 'calendar.hiddenCalendars'
 const VIEW_KEY = 'calendar.view'
 const LAST_CALENDAR_KEY = 'calendar.lastCalendar'
+const PEOPLE_KEY = 'calendar.people'
 const REFRESH_MS = 15_000
+// Other people's busy times: re-read at most this often (their calendars have no ctag we may read).
+const PEOPLE_REFRESH_MS = 60_000
+const MAX_PEOPLE = 10
+const PEOPLE_COLORS = [
+  'darkorange',
+  'seagreen',
+  'mediumpurple',
+  'crimson',
+  'teal',
+  'orchid',
+  'goldenrod',
+  'slategray',
+  'royalblue'
+] as const
 
 const { $gettext, current: currentLanguage } = useGettext()
 const { showMessage, showErrorMessage } = useMessages()
@@ -175,6 +210,10 @@ const search = ref('')
 const loadError = ref('')
 const loadingCount = ref(0)
 const sidebarOpen = ref(false)
+const people = ref<WatchedPerson[]>(readStorage(PEOPLE_KEY, []))
+const addingPerson = ref(false)
+/** The server answers free/busy queries (calshare with FREEBUSY on) */
+const freeBusyEnabled = ref(false)
 const saving = ref(false)
 const confirmingDelete = ref(false)
 const creatingCalendar = ref(false)
@@ -213,10 +252,11 @@ const dirty = new Set<string>()
 const ctags = new Map<string, string>()
 let dragging = false
 
-const eventSources = computed<EventSourceInput[]>(() =>
-  calendars.value
+const eventSources = computed<EventSourceInput[]>(() => [
+  ...(showPeople.value ? [peopleSource()] : []),
+  ...calendars.value
     .filter((c) => !hidden.value.includes(c.href))
-    .map((calendar) => ({
+    .map((calendar): EventSourceInput => ({
       id: calendar.href,
       events: (info, success, failure) => {
         const range = `${info.startStr}|${info.endStr}`
@@ -237,7 +277,110 @@ const eventSources = computed<EventSourceInput[]>(() =>
           .finally(() => loadingCount.value--)
       }
     }))
+])
+
+// --- other people's busy times ("People" in the sidebar) ------------------------------
+
+const visiblePeople = computed(() => people.value.filter((p) => !p.hidden))
+// Not on the invitations tab, nor while searching: those list events, and busy blocks are none.
+const showPeople = computed(
+  () => freeBusyEnabled.value && visiblePeople.value.length > 0 && filter.value !== 'invitations' && !search.value
 )
+let peopleCache: { key: string; at: number; events: EventInput[] } | null = null
+
+function peopleSource(): EventSourceInput {
+  return {
+    id: 'people',
+    events: (info, success) => {
+      const list = visiblePeople.value
+      const key = `${info.startStr}|${info.endStr}|${list.map((p) => `${p.id}:${p.color}`).join()}`
+      if (peopleCache?.key === key && Date.now() - peopleCache.at < PEOPLE_REFRESH_MS) {
+        success(peopleCache.events)
+        return
+      }
+      loadingCount.value++
+      // What I already see (our shared events, calendars shared with me) is left out: no duplicates.
+      calshare
+        .freeBusy(
+          list.map((p) => p.id),
+          info.start,
+          info.end,
+          { omitKnown: true }
+        )
+        .then((answer) => {
+          const events = answer.flatMap((a) => busyEvents(a, list))
+          peopleCache = { key, at: Date.now(), events }
+          success(events)
+        })
+        .catch((error) => {
+          if (isFreeBusyDisabled(error)) freeBusyEnabled.value = false
+          else console.warn('calendar: cannot read availability', error)
+          // A failed refresh keeps what was shown; the next tick retries.
+          success(peopleCache?.key === key ? peopleCache.events : [])
+        })
+        .finally(() => loadingCount.value--)
+    }
+  }
+}
+
+function busyEvents(availability: Availability, list: WatchedPerson[]): EventInput[] {
+  const person = list.find((p) => p.id === availability.id)
+  if (!person) return []
+  return availability.busy.map((block, i) => {
+    // A public event shows its title; anything else only "Busy" / "Maybe".
+    const label = block.title || (block.status === 'busy' ? $gettext('Busy') : $gettext('Maybe'))
+    return {
+      id: `busy:${person.id}:${i}`,
+      title: `${person.name} · ${label}`,
+      start: block.start,
+      end: block.end,
+      allDay: block.allDay,
+      classNames: ['oc-busy', `oc-busy-${block.status}`, ...(block.title !== undefined ? ['oc-busy-public'] : [])],
+      startEditable: false,
+      durationEditable: false,
+      extendedProps: {
+        busyOf: person.id,
+        person: person.name,
+        label,
+        location: block.location ?? '',
+        color: person.color,
+        overlay: 1
+      }
+    }
+  })
+}
+
+/** Suggested for the next person: warm and green hues first, since calendars are mostly blue, and unused. */
+const defaultPersonColor = computed(() => {
+  const used = new Set([...people.value.map((p) => p.color), ...calendars.value.map((c) => c.color.toLowerCase())])
+  return PEOPLE_COLORS.find((c) => !used.has(PALETTE_HEX[c])) ?? PEOPLE_COLORS[people.value.length % PEOPLE_COLORS.length]
+})
+
+function addPerson({ user, color }: { user: DirectoryUser; color: string }) {
+  addingPerson.value = false
+  if (people.value.some((p) => p.id === user.id) || people.value.length >= MAX_PEOPLE) return
+  people.value = [...people.value, { id: user.id, name: user.displayName, color }]
+  writeStorage(PEOPLE_KEY, people.value)
+}
+
+function removePerson(id: string) {
+  people.value = people.value.filter((p) => p.id !== id)
+  writeStorage(PEOPLE_KEY, people.value)
+}
+
+function togglePerson(id: string) {
+  people.value = people.value.map((p) => (p.id === id ? { ...p, hidden: !p.hidden } : p))
+  writeStorage(PEOPLE_KEY, people.value)
+}
+
+/** One tiny query tells whether the server offers free/busy (403 when off, 404 on older servers). */
+function probeFreeBusy() {
+  const now = new Date()
+  calshare
+    .freeBusy([meId.value], now, new Date(now.getTime() + 60_000))
+    .then(() => (freeBusyEnabled.value = true))
+    .catch(() => (freeBusyEnabled.value = false))
+}
 
 function visibleEvents(events: EventInstance[], calendar: CalendarSource) {
   return events.filter((e) => !isDuplicate(e, calendar) && matchesFilter(e, calendar)).map((e) => toFullCalendar(e, calendar))
@@ -316,7 +459,7 @@ function toFullCalendar(event: EventInstance, calendar: CalendarSource): EventIn
     classNames,
     startEditable: movable,
     durationEditable: movable,
-    extendedProps: { instance: event, location: event.location, color: event.color ?? calendar.color }
+    extendedProps: { instance: event, location: event.location, color: event.color ?? calendar.color, overlay: 0 }
   }
 }
 
@@ -339,6 +482,8 @@ function baseOptions(): CalendarOptions {
     dayMaxEvents: true,
     // Events at the same time sit side by side: overlapping, the later one hid the other's title.
     slotEventOverlap: false,
+    // At the same start, my events first and other people's busy blocks next to them
+    eventOrder: 'start,overlay,-duration,allDay,title',
     scrollTime: '08:00:00',
     slotLabelFormat: { hour: 'numeric', minute: '2-digit', omitZeroMinute: true },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit' },
@@ -446,6 +591,8 @@ async function checkForChanges() {
       fc?.getEventSourceById(calendar.href)?.refetch()
     }
   }
+  // Re-reads other people's busy times once PEOPLE_REFRESH_MS has passed (the source keeps them until then).
+  fc?.getEventSourceById('people')?.refetch()
 }
 
 // Answers given from the top-bar bell change the guest's copies: reload them.
@@ -505,7 +652,9 @@ function emptyDraft(start: Date, end: Date, allDay: boolean): EventDraft {
     location: '',
     description: '',
     guests: [],
-    color: null
+    color: null,
+    busy: !allDay,
+    public: false
   }
 }
 
@@ -519,7 +668,9 @@ function draftOf(instance: EventInstance, start: Date, end: Date, allDay: boolea
     location: instance.location,
     description: instance.description,
     guests: instance.guests,
-    color: instance.color
+    color: instance.color,
+    busy: instance.busy,
+    public: instance.public
   }
 }
 
@@ -544,6 +695,7 @@ function endOf(start: Date, end: Date | null, allDay: boolean) {
 }
 
 function onEventClick(info: EventClickArg) {
+  if (info.event.extendedProps.busyOf) return // someone else's busy time: nothing to open
   const instance = info.event.extendedProps.instance as EventInstance
   const calendar = calendars.value.find((c) => c.href === instance.calendarHref)
   const start = info.event.start!
@@ -724,6 +876,7 @@ onMounted(() => {
   fc = new Calendar(calendarEl.value!, baseOptions())
   fc.render()
   loadCalendars().catch(() => {})
+  probeFreeBusy()
 })
 
 onBeforeUnmount(() => {

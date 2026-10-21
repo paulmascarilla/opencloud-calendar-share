@@ -7,6 +7,8 @@ Calendars for [OpenCloud](https://opencloud.eu), on top of [Radicale](https://ra
   event, or their CalDAV client); invitations created in Thunderbird / DAVx⁵ work too
 - **Calendar app for OpenCloud Web**: month / week / day / list views, drag & drop, colors, search,
   auto-refresh, invitations bell in OpenCloud's top bar, calendar creation, sharing management
+- **Availability**: see when guests and colleagues are busy (times only, never the events), find the next time
+  everyone is free
 
 <p align="center">
   <img src="docs/assets/demo.gif" alt="Demo: plan an event with a guest, accept an invitation from the bell, answer from a CalDAV app's link, share a calendar, create a calendar">

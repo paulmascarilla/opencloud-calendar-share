@@ -43,6 +43,10 @@ export interface EventInstance {
   invitationFrom: string | null
   /** RFC 7986 COLOR (a CSS3 color name), overrides the calendar color */
   color: string | null
+  /** Shows the user as busy (TRANSP); without TRANSP, timed events are busy and all-day events free */
+  busy: boolean
+  /** X-OC-VISIBILITY:PUBLIC: people who see the user's availability also see the title and place */
+  public: boolean
 }
 
 export interface EventDraft {
@@ -57,6 +61,8 @@ export interface EventDraft {
   /** OpenCloud guests; the sidecar turns them into invitations */
   guests: Guest[]
   color: string | null
+  busy: boolean
+  public: boolean
 }
 
 /** Turns one calendar-data payload (expanded by the server) into displayable occurrences. */
@@ -101,7 +107,9 @@ export function parseInstances(ics: string, href: string, etag: string, calendar
         })
         .filter((g): g is Guest => !!g),
       invitationFrom,
-      color: (vevent.getFirstPropertyValue('color') as string | null) ?? null
+      color: (vevent.getFirstPropertyValue('color') as string | null) ?? null,
+      busy: isBusy(vevent, allDay),
+      public: isPublic(vevent)
     }
   })
 }
@@ -141,6 +149,22 @@ const RESPONSES: Record<string, GuestResponse> = {
   DECLINED: 'declined'
 }
 
+/** TRANSP, else the default of Google Calendar and Outlook (the calshare free/busy rule too). */
+function isBusy(vevent: ICAL.Component, allDay: boolean) {
+  const transp = String(vevent.getFirstPropertyValue('transp') ?? '').toUpperCase()
+  return transp ? transp !== 'TRANSPARENT' : !allDay
+}
+
+/** Not CLASS:PUBLIC, which some CalDAV clients write on every event (see the calshare free/busy). */
+function isPublic(vevent: ICAL.Component) {
+  return String(vevent.getFirstPropertyValue('x-oc-visibility') ?? '').toUpperCase() === 'PUBLIC'
+}
+
+function setPublic(vevent: ICAL.Component, value: boolean) {
+  if (value) vevent.updatePropertyWithValue('x-oc-visibility', 'PUBLIC')
+  else vevent.removeAllProperties('x-oc-visibility')
+}
+
 /** X-OC-PROPOSED-START / -END on an ATTENDEE (written by the calshare sidecar). */
 function proposalOf(prop: ICAL.Property): Proposal | null {
   const start = prop.getParameter('x-oc-proposed-start') as string | undefined
@@ -175,6 +199,8 @@ export function newEventIcs(draft: EventDraft, uid: string) {
   vevent.updatePropertyWithValue('sequence', 0)
   setTime(vevent, 'dtstart', toIcalTime(draft.start, draft.allDay))
   setTime(vevent, 'dtend', toIcalTime(draft.end, draft.allDay))
+  vevent.updatePropertyWithValue('transp', draft.busy ? 'OPAQUE' : 'TRANSPARENT')
+  setPublic(vevent, draft.public)
   return vcalendar.toString()
 }
 
@@ -220,6 +246,25 @@ export function updatedEventIcs(ics: string, draft: EventDraft, base: EventDraft
     target.removeAllProperties('duration')
     setTime(target, 'dtstart', toIcalTime(draft.start, draft.allDay))
     setTime(target, 'dtend', toIcalTime(draft.end, draft.allDay))
+  }
+
+  // Busy / free, written when changed, or kept as shown when the default changes (all-day toggled without TRANSP).
+  if (draft.busy !== base.busy || (timesChanged && !recurrenceId && draft.allDay !== base.allDay && !target.hasProperty('transp'))) {
+    const transp = draft.busy ? 'OPAQUE' : 'TRANSPARENT'
+    if (target === master) {
+      for (const occurrence of vevents.filter((v) => v !== master)) {
+        if (text(occurrence, 'transp') === text(master, 'transp')) occurrence.updatePropertyWithValue('transp', transp)
+      }
+    }
+    target.updatePropertyWithValue('transp', transp)
+  }
+  if (draft.public !== base.public) {
+    if (target === master) {
+      for (const occurrence of vevents.filter((v) => v !== master)) {
+        if (isPublic(occurrence) === isPublic(master)) setPublic(occurrence, draft.public)
+      }
+    }
+    setPublic(target, draft.public)
   }
 
   const now = ICAL.Time.now()

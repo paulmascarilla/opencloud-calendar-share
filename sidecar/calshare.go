@@ -24,6 +24,7 @@
 //	POST   /v1/calendars/{cal}/events/{event}/proposals/{guest}/decline  dismiss it
 //	GET    /v1/invitations                         events the caller organizes / is invited to
 //	GET    /v1/invitations/pending                 upcoming invitations the caller has not answered
+//	GET    /v1/freebusy?users=…&start=…&end=…      when people are busy, without the events (freebusy.go)
 //	GET    /healthz
 //
 // Event invitations are delivered and kept in sync by the invitations Agent, which
@@ -80,6 +81,8 @@ type Config struct {
 	// Address of the CalDAV gate: checks ProxySecret, then forwards to Radicale (which only
 	// listens on localhost). Empty: no gate.
 	CalDAVListen string
+	// Lets users see when others are busy (times only, never the events).
+	FreeBusy bool
 }
 
 // SecretHeader carries Config.ProxySecret from the OpenCloud proxy.
@@ -108,6 +111,7 @@ func ConfigFromEnv() Config {
 		InviteLanguage:   env("INVITE_LANGUAGE", "en"),
 		ProxySecret:      env("PROXY_SECRET", ""),
 		CalDAVListen:     env("CALDAV_LISTEN", ""),
+		FreeBusy:         strings.ToLower(env("FREEBUSY", "true")) == "true",
 	}
 }
 
@@ -127,6 +131,7 @@ type Server struct {
 	gate   http.Handler // CalDAV gate to Radicale
 	client *http.Client
 	agent  *Agent
+	busy   busyCache
 
 	emailMu    sync.Mutex
 	emailCache map[string]emailHit  // bounded by maxEmailCache
@@ -895,6 +900,7 @@ func (s *Server) route(r *http.Request) (any, int, error) {
 		if host != "127.0.0.1" || r.Header.Get("X-Forwarded-For") != "" {
 			return nil, 0, apiErr(403, "forbidden")
 		}
+		s.storageChanged(r.Header.Get("X-Calshare-Path"), r.Header.Get("X-Calshare-To"))
 		s.agent.Notify(r.Header.Get("X-Calshare-Request"), r.Header.Get("X-Calshare-Path"), r.Header.Get("X-Calshare-To"))
 		return Obj{{"status", "queued"}}, 202, nil
 	}
@@ -1020,6 +1026,9 @@ func (s *Server) route(r *http.Request) (any, int, error) {
 		return s.agent.ListFor(user), 200, nil
 	case is("GET", "invitations", "pending"):
 		return s.agent.PendingFor(user), 200, nil
+	case is("GET", "freebusy"):
+		view, err := s.freeBusy(user, r.URL.Query())
+		return view, 200, err
 	}
 	return nil, 0, apiErr(404, "not found")
 }
