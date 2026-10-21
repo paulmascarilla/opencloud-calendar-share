@@ -1,6 +1,6 @@
 // Invitations bell + toast in OpenCloud's top bar (while another app is open), refresh button, calendar creation.
-// usage: CHROMIUM=/snap/bin/chromium TOKENS_FILE=tokens.env node test/ui-notifications.mjs <screenshot dir>
-import { chromium } from 'playwright-core'
+// usage: [BROWSER=firefox] TOKENS_FILE=tokens.env node test/ui-notifications.mjs <screenshot dir>
+import { launch } from './browser.mjs'
 import { readFileSync } from 'node:fs'
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 const out = process.argv[2] ?? '.'
@@ -10,7 +10,7 @@ const auth = (who) => 'Basic ' + Buffer.from(`${who}:${tokens.match(new RegExp(`
 const call = (who, method, path, body, headers = {}) => fetch(OC + path, { method, body, headers: { Authorization: auth(who), ...headers } })
 const ALICE = 'be578ae3-5d68-4ad0-9cb2-0e0c9123e76d'
 const EV = `notif-${Date.now()}.ics`
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const errors = []
 
 async function login(user, pass, path, scheme = 'dark') {

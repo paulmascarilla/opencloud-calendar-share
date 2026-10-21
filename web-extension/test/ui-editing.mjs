@@ -1,11 +1,11 @@
 // Editing edge cases in a real (headless) Chromium: recurring all-day series, changes made elsewhere while the page
 // is open, occurrences changed on their own, "All day" toggle.
-// usage: CHROMIUM=/snap/bin/chromium OC=https://localhost:9200 node test/ui-editing.mjs <screenshot dir> [user] [password]
+// usage: [BROWSER=firefox] OC=https://localhost:9200 node test/ui-editing.mjs <screenshot dir> [user] [password]
 import assert from 'node:assert/strict'
-import { chromium } from 'playwright-core'
+import { launch } from './browser.mjs'
 const OC = process.env.OC ?? 'https://localhost:9200'
 const [out, user = 'alice', pass = 'Test-alice-12345'] = process.argv.slice(2)
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 }, timezoneId: 'Europe/Paris', locale: 'fr-FR' })
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
