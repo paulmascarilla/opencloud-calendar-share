@@ -1,12 +1,12 @@
 // How invitations show their dates, in a real (headless) Chromium with two users: answer page (multi-day,
 // recurring, after midnight), "Open in the calendar", invitations tab count, an invitation in a calendar
 // shared with the guest, default calendar for new events, week headers on a phone.
-// usage: CHROMIUM=/snap/bin/chromium OC=https://localhost:9200 node test/ui-invitation-dates.mjs <screenshot dir>
+// usage: [BROWSER=firefox] OC=https://localhost:9200 node test/ui-invitation-dates.mjs <screenshot dir>
 import assert from 'node:assert/strict'
-import { chromium } from 'playwright-core'
+import { launch } from './browser.mjs'
 const OC = process.env.OC ?? 'https://localhost:9200'
 const out = process.argv[2] ?? '.'
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const errors = []
 
 async function session(user, viewport = { width: 1400, height: 900 }) {

@@ -1,9 +1,9 @@
 // UI test of event invitations in a real (headless) Chromium, with two users in separate sessions.
-// usage: CHROMIUM=/snap/bin/chromium OC=https://localhost:9200 node test/ui-invitations.mjs <screenshot dir>
-import { chromium } from 'playwright-core'
+// usage: [BROWSER=firefox] OC=https://localhost:9200 node test/ui-invitations.mjs <screenshot dir>
+import { launch } from './browser.mjs'
 const out = process.argv[2] ?? '.'
 const OC = process.env.OC ?? 'https://localhost:9200'
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const errors = []
 
 async function session(user, pass) {
@@ -11,13 +11,12 @@ async function session(user, pass) {
   const page = await context.newPage()
   page.on('pageerror', (e) => errors.push(`[${user}] ${e.message}`))
   page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('/photo/')) errors.push(`[${user}] HTTP ${r.status()} ${r.request().method()} ${r.url()}`) })
-  await page.goto(`${OC}/calendar`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${OC}/calendar?date=2026-10-19`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('input[type=password]', { timeout: 30000 })
   await page.locator('input:not([type=password]):not([type=hidden])').first().fill(user)
   await page.locator('input[type=password]').fill(pass)
   await page.keyboard.press('Enter')
   await page.waitForSelector('.fc-timegrid', { timeout: 30000 })
-  await page.getByRole('button', { name: 'Suivant' }).click()
   await page.waitForTimeout(1500)
   return page
 }
@@ -69,7 +68,7 @@ console.log('bob event classes after accept:', await event(bob, 'Point budget').
 await shot(bob, 'inv-4-bob-accepted')
 
 // 3. alice sees bob's answer
-await alice.reload(); await alice.waitForSelector('.fc-timegrid'); await alice.getByRole('button', { name: 'Suivant' }).click()
+await alice.reload(); await alice.waitForSelector('.fc-timegrid')
 await event(alice, 'Point budget').waitFor({ timeout: 15000 })
 await event(alice, 'Point budget').evaluate((el) => el.click())
 await alice.waitForSelector('#event-title')
@@ -81,7 +80,7 @@ await shot(alice, 'inv-5-alice-answers')
 await alice.getByRole('button', { name: /Supprimer l'événement/ }).click()
 await alice.locator('.oc-modal').last().getByRole('button', { name: 'Supprimer', exact: true }).click()
 await alice.waitForTimeout(3000)
-await bob.reload(); await bob.waitForSelector('.fc-timegrid'); await bob.getByRole('button', { name: 'Suivant' }).click(); await bob.waitForTimeout(2500)
+await bob.reload(); await bob.waitForSelector('.fc-timegrid'); await bob.waitForTimeout(2500)
 console.log('bob still has it after delete:', await bob.locator('.fc-event', { hasText: 'Point budget' }).count())
 console.log(errors.join('\n') || '(no errors)')
 await browser.close()

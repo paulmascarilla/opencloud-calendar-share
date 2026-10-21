@@ -28,6 +28,15 @@ export const dayHeaderContent: CustomContentGenerator<DayHeaderContentArg> = (ar
 /** Title first, time below, as in the week view blocks. */
 export const eventContent: CustomContentGenerator<EventContentArg> = (arg) => {
   if (!arg.view.type.startsWith('timeGrid') || arg.event.allDay) return true
+  const { busyOf, person, label } = arg.event.extendedProps
+  if (busyOf) {
+    // Someone else's busy time: who, then "Busy · 10:00 - 11:00"
+    const nodes = [el('div', 'oc-ev-title', person as string)]
+    nodes.push(el('div', 'oc-ev-time', arg.timeText ? `${label} · ${arg.timeText}` : (label as string)))
+    const location = arg.event.extendedProps.location as string
+    if (location) nodes.push(el('div', 'oc-ev-location', location))
+    return { domNodes: nodes }
+  }
   const nodes = [el('div', 'oc-ev-title', arg.event.title)]
   if (arg.timeText) nodes.push(el('div', 'oc-ev-time', arg.timeText))
   const location = arg.event.extendedProps.location as string
@@ -38,6 +47,9 @@ export const eventContent: CustomContentGenerator<EventContentArg> = (arg) => {
 /** Event color (event COLOR, else calendar color) exposed to CSS as --ev. */
 export function eventDidMount(arg: EventMountArg) {
   arg.el.style.setProperty('--ev', arg.event.extendedProps.color as string)
+  if (arg.event.extendedProps.busyOf) {
+    arg.el.title = arg.timeText ? `${arg.event.title} · ${arg.timeText}` : arg.event.title
+  }
 }
 
 /** Current time in the time axis, next to the dotted "now" line. */

@@ -30,7 +30,7 @@ func launchGo(t *testing.T, radicaleURL, graphURL, root, state string) (string, 
 	s, err := NewServer(Config{
 		BasePath: "/calshare", RadicaleURL: radicaleURL, OCURL: graphURL, OCServiceAuth: "svc:token",
 		AutoAccept: true, RemoteUserHeader: "X-Remote-User", CollectionRoot: root, StateDir: state,
-		PublicURL: publicURL, InviteLanguage: "fr",
+		PublicURL: publicURL, InviteLanguage: "fr", FreeBusy: true,
 	})
 	if err != nil {
 		t.Fatal(err)

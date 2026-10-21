@@ -61,6 +61,8 @@ spec:
               value: {{ .Values.calshare.opencloudInsecure | quote }}
             - name: AUTO_ACCEPT
               value: {{ .Values.calshare.autoAccept | quote }}
+            - name: FREEBUSY
+              value: {{ .Values.calshare.freeBusy | quote }}
             - name: PUBLIC_URL
               value: {{ .Values.calshare.publicUrl | quote }}
             - name: INVITE_LANGUAGE

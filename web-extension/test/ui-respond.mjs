@@ -1,6 +1,6 @@
 // The Accept link put in an invitation copy (what a CalDAV client shows) answers the invitation.
-// usage: CHROMIUM=/snap/bin/chromium TOKENS_FILE=tokens.env node test/ui-respond.mjs <screenshot dir>
-import { chromium } from 'playwright-core'
+// usage: [BROWSER=firefox] TOKENS_FILE=tokens.env node test/ui-respond.mjs <screenshot dir>
+import { browserType, launchOptions } from './browser.mjs'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,8 +34,8 @@ console.log('accept link:', accept)
 // Persistent context: lets us open a tab directly on a URL (CDP Target.createTarget), like a link
 // clicked in a calendar app — Playwright's newPage() would add an about:blank history entry.
 const profile = mkdtempSync(join(tmpdir(), 'ui-respond-'))
-const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium',
-  headless: true, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 860 }, colorScheme: 'light', locale: 'fr-FR', timezoneId: 'Europe/Paris' })
+const context = await browserType.launchPersistentContext(profile, { ...launchOptions,
+  ignoreHTTPSErrors: true, viewport: { width: 1280, height: 860 }, colorScheme: 'light', locale: 'fr-FR', timezoneId: 'Europe/Paris' })
 const page = context.pages()[0] ?? await context.newPage()
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))

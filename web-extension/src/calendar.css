@@ -299,6 +299,86 @@
   outline-offset: 1px;
 }
 
+/* --- other people's busy times ("People" in the sidebar) ----------------------------------
+ * Ghost blocks in the person's color: a faint tint and a solid edge, so they never read as
+ * one of my events. "Maybe" is hatched with a dashed edge, like a tentative invitation. */
+.oc-calendar .fc .oc-busy {
+  --ev-bg: color-mix(in srgb, var(--ev) 7%, var(--oc-role-surface));
+  --ev-line: color-mix(in srgb, var(--ev) 38%, var(--oc-role-surface));
+  --ev-soft: color-mix(in srgb, var(--ev) 55%, var(--oc-role-on-surface-variant));
+  background: var(--ev-bg);
+  border: 1px solid var(--ev-line);
+  border-left: 3px solid var(--ev);
+  border-radius: 0.4rem;
+  box-shadow: none;
+  cursor: default;
+}
+.oc-calendar .fc .oc-busy .fc-event-main,
+.oc-calendar .fc .oc-busy .oc-ev-title {
+  color: var(--ev-soft);
+}
+.oc-calendar .fc .oc-busy .oc-ev-title {
+  font-weight: 500;
+}
+.oc-calendar .fc .oc-busy .oc-ev-time {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ev-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-calendar .fc-timegrid-event.oc-busy .fc-event-main {
+  padding: 0.3rem 0.45rem;
+  overflow: hidden;
+}
+.oc-calendar .fc-timegrid-event-harness-inset .oc-busy {
+  box-shadow: 0 0 0 1px var(--oc-role-surface);
+}
+.oc-calendar .fc .oc-busy-tentative {
+  border-left-style: dashed;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--ev) 10%, transparent) 6px 12px
+  );
+}
+/* all-day row and month view */
+.oc-calendar .fc .fc-daygrid-block-event.oc-busy .fc-event-main {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.oc-calendar .fc .fc-daygrid-dot-event.oc-busy {
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.75rem;
+}
+.oc-calendar .fc .fc-daygrid-dot-event.oc-busy .fc-event-title {
+  font-weight: 500;
+  color: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .fc-daygrid-dot-event.oc-busy .fc-event-time {
+  color: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .oc-busy .fc-daygrid-event-dot,
+.oc-calendar .fc .oc-busy .fc-list-event-dot {
+  border-color: var(--ev);
+  border-style: dotted;
+}
+/* agenda: a quiet row, not a link */
+.oc-calendar .fc .fc-list-event.oc-busy {
+  background: transparent;
+  border: 0;
+}
+.oc-calendar .fc .fc-list-event.oc-busy .fc-list-event-title {
+  font-weight: 400;
+  color: var(--oc-role-on-surface-variant);
+}
+.oc-calendar .fc .fc-list-event.oc-busy:hover td {
+  background: transparent;
+}
+
 /* The CSP (font-src 'self') blocks FullCalendar's inline icon font: use text glyphs. */
 .oc-calendar .fc .fc-icon {
   font-family: inherit;

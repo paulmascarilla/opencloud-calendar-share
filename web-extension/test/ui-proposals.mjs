@@ -1,12 +1,12 @@
 // Proposing another time, in a real (headless) Chromium with two users: a guest moves their copy in a
 // CalDAV client (undone, becomes a proposal), the organizer accepts it; a guest proposes from the web app
 // and from the invitation page, the organizer declines.
-// usage: CHROMIUM=/snap/bin/chromium OC=https://localhost:9200 node test/ui-proposals.mjs <screenshot dir>
+// usage: [BROWSER=firefox] OC=https://localhost:9200 node test/ui-proposals.mjs <screenshot dir>
 import assert from 'node:assert/strict'
-import { chromium } from 'playwright-core'
+import { launch } from './browser.mjs'
 const OC = process.env.OC ?? 'https://localhost:9200'
 const out = process.argv[2] ?? '.'
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const errors = []
 
 async function session(user) {

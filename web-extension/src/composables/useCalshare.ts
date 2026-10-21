@@ -37,6 +37,33 @@ export interface PendingInvitation {
   organizer: string
 }
 
+/** One busy block of someone's calendar: times only, never what the event is. */
+export interface BusyBlock {
+  /** ISO date-time (UTC), or YYYY-MM-DD for all-day blocks (end exclusive) */
+  start: string
+  end: string
+  allDay: boolean
+  status: 'busy' | 'tentative'
+  /** Public events only: what the owner chose to show */
+  title?: string
+  location?: string
+}
+
+export interface Availability {
+  id: string
+  /** false: the person never used a calendar, nothing is known */
+  calendar: boolean
+  busy: BusyBlock[]
+  error?: string
+}
+
+export interface FreeBusyOptions {
+  /** UID of the event being edited: it does not conflict with itself */
+  except?: string
+  /** Leave out what the caller already sees (their events, calendars shared with them) */
+  omitKnown?: boolean
+}
+
 /** Typed client for the calshare sidecar, reached through the OpenCloud proxy at /calshare. */
 export function useCalshare() {
   const clientService = useClientService()
@@ -117,6 +144,20 @@ export function useCalshare() {
     return data
   }
 
+  /** When people are busy between start and end (at most 20 people, 100 days). */
+  async function freeBusy(users: string[], start: Date, end: Date, options: FreeBusyOptions = {}) {
+    const { data } = await clientService.httpAuthenticated.get<{ users: Availability[] }>(url('freebusy'), {
+      params: {
+        users: users.join(','),
+        start: start.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        end: end.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        ...(options.except ? { except: options.except } : {}),
+        ...(options.omitKnown ? { omit: 'known' } : {})
+      }
+    })
+    return data.users
+  }
+
   return {
     listCalendars,
     listOutgoing,
@@ -128,8 +169,14 @@ export function useCalshare() {
     answerInvitation,
     propose,
     decideProposal,
-    pendingInvitations
+    pendingInvitations,
+    freeBusy
   }
+}
+
+/** The server has free/busy turned off (FREEBUSY=false): availability is not shown at all. */
+export function isFreeBusyDisabled(error: unknown) {
+  return (error as { response?: { status?: number } })?.response?.status === 403
 }
 
 /** Extracts the sidecar's `{"error": "..."}` message from an axios error, if any. */

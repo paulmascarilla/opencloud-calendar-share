@@ -1,14 +1,14 @@
 // UI smoke test in a real (headless) Chromium: open, rename, create by drag, move, reload, delete, views.
-// usage: CHROMIUM=/snap/bin/chromium OC=https://localhost:9200 pnpm test:ui <screenshot dir> [user] [password]
-import { chromium } from 'playwright-core'
+// usage: [BROWSER=firefox] OC=https://localhost:9200 pnpm test:ui <screenshot dir> [user] [password]
+import { launch } from './browser.mjs'
 const [out, user = 'alice', pass = 'Test-alice-12345'] = process.argv.slice(2)
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 860 }, colorScheme: 'dark', timezoneId: 'Europe/Paris', locale: 'fr-FR' })
 const logs = []
 page.on('console', (m) => { if (['error', 'warning'].includes(m.type()) && !m.text().includes('font-src')) logs.push(`[${m.type()}] ${m.text().slice(0, 300)}`) })
 page.on('pageerror', (e) => logs.push(`[pageerror] ${(e.stack || e.message).slice(0, 600)}`))
 page.on('response', (r) => { if (r.status() >= 400) logs.push(`[http ${r.status()}] ${r.request().method()} ${r.url()}`) })
-await page.goto(`${process.env.OC ?? 'https://localhost:9200'}/calendar`, { waitUntil: 'domcontentloaded' })
+await page.goto(`${process.env.OC ?? 'https://localhost:9200'}/calendar?date=2026-10-19`, { waitUntil: 'domcontentloaded' })
 await page.waitForSelector('input[type=password], .fc, aside', { timeout: 30000 })
 if (await page.locator('input[type=password]').count()) {
   await page.locator('input:not([type=password]):not([type=hidden])').first().fill(user)
@@ -20,10 +20,9 @@ await page.waitForTimeout(3000)
 await page.screenshot({ path: `${out}/1-week.png` })
 const step = async (name) => { await page.waitForTimeout(1200); await page.screenshot({ path: `${out}/${name}.png` }) }
 const titles = async () => (await page.locator('.oc-ev-title, .fc-event-title').allTextContents()).join(' | ')
-await page.getByRole('button', { name: 'Suivant' }).click()
 await page.waitForSelector('.fc-event', { timeout: 15000 }).catch(() => {})
-await step('2-next-week')
-console.log('next week events:', await titles())
+await step('2-target-week')
+console.log('target week events:', await titles())
 
 // edit: open "Reunion Alice", rename, save with Enter
 await page.locator('.fc-event', { hasText: 'Alice' }).first().evaluate((el) => el.click())
@@ -62,7 +61,7 @@ console.log('moved:', await moved.locator('.oc-ev-time').textContent(), 'day:', 
 await step('5-after-drag')
 
 // reload page to prove it was persisted server-side
-await page.reload(); await page.waitForSelector('.fc-timegrid', { timeout: 20000 }); await page.getByRole('button', { name: 'Suivant' }).click(); await page.waitForSelector('.fc-event', { timeout: 20000 }).catch(() => {})
+await page.reload(); await page.waitForSelector('.fc-timegrid', { timeout: 20000 }); await page.waitForSelector('.fc-event', { timeout: 20000 }).catch(() => {})
 await page.waitForTimeout(2000)
 const persisted = page.locator('.fc-event', { hasText: 'Atelier' }).first()
 console.log('after reload:', await persisted.locator('.oc-ev-time').textContent().catch(() => 'MISSING'), await persisted.evaluate((el) => el.closest('.fc-timegrid-col')?.dataset.date).catch(() => ''))

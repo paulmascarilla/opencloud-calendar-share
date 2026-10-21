@@ -47,18 +47,18 @@ Create `alice` and `bob` through the Graph API, then run the scripts with `OC=ht
 
 | Test | Covers |
 |---|---|
-| `sidecar`: `go test -race ./...` | the whole sidecar against an in-memory Radicale and Graph: sharing, invitations, moves, time zones, CalDAV-client invitations, guest edits and proposals, catch-up scan |
+| `sidecar`: `go test -race ./...` | the whole sidecar against an in-memory Radicale and Graph: sharing, invitations, moves, time zones, CalDAV-client invitations, guest edits and proposals, catch-up scan, free/busy |
 | `test/e2e.sh` | calendar sharing through the proxy |
 | `test/invitations-e2e.sh` | invitations: delivery, answers, moves, time zones, CalDAV-client invitations, clients dropping markers (31 checks) |
 | `web-extension`: `pnpm test:integration` | iCalendar logic against the live server |
-| `web-extension/test/ui-*.mjs` | headless Chromium (playwright-core): calendar, editing edge cases, invitation dates, proposals, invitations, answer links, notifications, design and auto-refresh |
+| `web-extension/test/ui-*.mjs` | headless Chromium (playwright-core): calendar, editing edge cases, invitation dates, proposals, invitations, answer links, notifications, availability, design and auto-refresh |
 
 ```sh
 TOKENS_FILE=tokens.env test/invitations-e2e.sh
 cd web-extension && CHROMIUM=/snap/bin/chromium TOKENS_FILE=../tokens.env node test/ui-notifications.mjs /tmp/shots
 ```
 
-The browser tests target the week of 19–25 Oct 2026.
+The browser tests target the week of 19–25 Oct 2026 (`ui-availability.mjs`: 26 Oct–1 Nov, after the DST change).
 
 ## Release
 

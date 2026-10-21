@@ -119,6 +119,36 @@
           {{ $gettext('The end must be after the start.') }}
         </p>
 
+        <div v-if="!readOnly" class="ext:flex ext:flex-col ext:gap-1">
+          <div class="ext:flex ext:flex-wrap ext:items-center ext:gap-x-6 ext:gap-y-2">
+            <div class="ext:inline-flex ext:items-center ext:gap-2">
+              <span class="ext:text-sm" aria-hidden="true">{{ $gettext('Show me as') }}</span>
+              <filter-tabs
+                :model-value="busy ? 'busy' : 'free'"
+                :tabs="showAsOptions"
+                :label="$gettext('Show me as')"
+                @update:model-value="setBusy($event === 'busy')"
+              />
+            </div>
+            <div class="ext:inline-flex ext:items-center ext:gap-2">
+              <span class="ext:text-sm" aria-hidden="true">{{ $gettext('Visibility') }}</span>
+              <filter-tabs
+                :model-value="isPublic ? 'public' : 'private'"
+                :tabs="visibilityOptions"
+                :label="$gettext('Visibility')"
+                @update:model-value="isPublic = $event === 'public'"
+              />
+            </div>
+          </div>
+          <p class="ext:m-0 ext:text-xs ext:text-role-on-surface-variant">
+            {{
+              isPublic
+                ? $gettext('People who see your availability also see the title and place of this event.')
+                : $gettext('People who see your availability only see that you are busy.')
+            }}
+          </p>
+        </div>
+
         <color-picker
           v-model="color"
           :calendar-color="calendar?.color ?? '#3b82f6'"
@@ -137,6 +167,18 @@
           :can-decide="!!event && guestsEditable"
           :busy="saving"
           @decide="(guest, accept) => emit('decide', guest, accept)"
+        />
+
+        <availability-timeline
+          v-if="availability && guestsEditable && otherGuests.length"
+          :me-id="meId"
+          :guests="otherGuests"
+          :start="startDate"
+          :end="endDate"
+          :all-day="allDay"
+          :except="event?.uid"
+          :move-disabled="timesLocked"
+          @move="moveTo"
         />
 
         <div v-if="event && !readOnly" class="ext:flex ext:justify-start">
@@ -159,6 +201,8 @@ import type { Guest, GuestResponse } from '../ical'
 import GuestList from './GuestList.vue'
 import ColorPicker from './ColorPicker.vue'
 import ProposeTime from './ProposeTime.vue'
+import AvailabilityTimeline from './AvailabilityTimeline.vue'
+import FilterTabs from './FilterTabs.vue'
 
 type Answer = Exclude<GuestResponse, 'pending'>
 
@@ -175,6 +219,8 @@ const props = defineProps<{
   meId: string
   /** The event is the current user's own copy of an invitation */
   canRespond: boolean
+  /** The server tells when guests are busy */
+  availability?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'save', draft: EventDraft): void
@@ -199,6 +245,25 @@ const endInput = ref(toInput(inclusiveEnd(props.initial.end, props.initial.allDa
 const guests = ref<Guest[]>([...props.initial.guests])
 const proposing = ref(false)
 const color = ref<string | null>(props.initial.color)
+const busy = ref(props.initial.busy)
+const isPublic = ref(props.initial.public)
+const visibilityOptions = computed(() => [
+  { value: 'private' as const, label: $gettext('Private') },
+  { value: 'public' as const, label: $gettext('Public') }
+])
+// Until the user picks, busy / free follows the all-day toggle (all-day events are free by default).
+let busyTouched = !!props.event
+
+function setBusy(value: boolean) {
+  busy.value = value
+  busyTouched = true
+}
+
+const showAsOptions = computed(() => [
+  { value: 'busy' as const, label: $gettext('Busy') },
+  { value: 'free' as const, label: $gettext('Free') }
+])
+const otherGuests = computed(() => guests.value.filter((g) => g.id !== props.meId))
 
 const timesLocked = computed(() => !!props.event?.recurring)
 const invitation = computed(() => props.canRespond)
@@ -217,6 +282,7 @@ const modalTitle = computed(() => {
 })
 
 watch(allDay, (value) => {
+  if (!busyTouched) busy.value = !value
   const start = fromInput(startInput.value, !value)
   const end = fromInput(endInput.value, !value)
   if (!start || !end) return
@@ -242,6 +308,14 @@ const canSave = computed(
   () => !props.readOnly && !!title.value.trim() && !!startDate.value && !!endDate.value && !rangeInvalid.value && !!calendar.value
 )
 
+/** A time picked in the availability timeline: same duration, new start. */
+function moveTo(start: Date) {
+  if (timesLocked.value || !startDate.value || !endDate.value) return
+  const duration = endDate.value.getTime() - startDate.value.getTime()
+  startInput.value = toInput(start, false)
+  endInput.value = toInput(new Date(start.getTime() + duration), false)
+}
+
 function save() {
   if (!canSave.value) return
   emit('save', {
@@ -253,7 +327,9 @@ function save() {
     location: location.value,
     description: description.value,
     guests: guests.value,
-    color: color.value
+    color: color.value,
+    busy: busy.value,
+    public: isPublic.value
   })
 }
 

@@ -1,9 +1,9 @@
 // Visual check (light/dark screenshots) + auto refresh: an event created through CalDAV must appear without reload.
-// usage: CHROMIUM=/snap/bin/chromium TOKENS_FILE=tokens.env node test/ui-design.mjs <screenshot dir>
-import { chromium } from 'playwright-core'
+// usage: [BROWSER=firefox] TOKENS_FILE=tokens.env node test/ui-design.mjs <screenshot dir>
+import { launch } from './browser.mjs'
 import { readFileSync } from 'node:fs'
 const out = process.argv[2]
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/snap/bin/chromium', headless: true })
+const browser = await launch()
 const errors = []
 async function open(scheme) {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 }, colorScheme: scheme, timezoneId: 'Europe/Paris', locale: 'fr-FR' })

@@ -34,7 +34,7 @@ const aliceCal = `/caldav/${ALICE_ID}/def-calendar/`
 const draft = (over: Partial<EventDraft>): EventDraft => ({
   calendarHref: aliceCal, title: 'Déjeuner équipe', allDay: false,
   start: new Date('2026-10-22T10:00:00Z'), end: new Date('2026-10-22T11:30:00Z'),
-  location: 'Cantine', description: 'ligne 1\nligne 2, avec ; et \\', guests: [], color: null, ...over })
+  location: 'Cantine', description: 'ligne 1\nligne 2, avec ; et \\', guests: [], color: null, busy: true, public: false, ...over })
 
 // 1. create a timed event
 const uid = `test-${Date.now()}`
@@ -160,7 +160,35 @@ assert.equal(copied.description, '')
 assert.deepEqual(copied.guests.map((g) => [g.name, g.proposal]), [['bob', { start: '2026-11-13', end: '2026-11-14', allDay: true }]])
 console.log('ok 9 guest copy: proposal, no generated description')
 
+// 10. busy / free (TRANSP): defaults, edits, and what others see through calshare's free/busy
+const one = (lines: string[]) => parseInstances(vcalendar(['UID:b', 'DTSTAMP:20261001T000000Z', ...lines]), '/x/b.ics', '', '/x/')[0]
+assert.equal(one(['DTSTART:20261112T090000Z', 'DTEND:20261112T100000Z']).busy, true, 'timed: busy by default')
+assert.equal(one(['DTSTART;VALUE=DATE:20261112', 'DTEND;VALUE=DATE:20261113']).busy, false, 'all-day: free by default')
+assert.equal(one(['DTSTART;VALUE=DATE:20261112', 'DTEND;VALUE=DATE:20261113', 'TRANSP:OPAQUE']).busy, true)
+assert.equal(one(['DTSTART:20261112T090000Z', 'DTEND:20261112T100000Z', 'TRANSP:TRANSPARENT']).busy, false)
+const freeUid = `free-${Date.now()}`
+const freeHref = `${aliceCal}${freeUid}.ics`
+const slot = { start: new Date('2026-11-18T09:00:00Z'), end: new Date('2026-11-18T10:00:00Z') }
+assert.equal((await put('alice', freeHref, newEventIcs(draft({ ...slot, busy: false }), freeUid), { 'If-None-Match': '*' })).status, 201)
+const busyAt = async () => {
+  const { text } = await call('bob', 'GET', `/calshare/v1/freebusy?users=${ALICE_ID}&start=2026-11-18T00:00:00Z&end=2026-11-19T00:00:00Z`)
+  return JSON.parse(text).users[0].busy.some((b: { start: string }) => b.start === '2026-11-18T09:00:00Z')
+}
+assert.match((await call('alice', 'GET', freeHref)).text, /TRANSP:TRANSPARENT/)
+assert.equal(await busyAt(), false, 'a free event does not block')
+got = await call('alice', 'GET', freeHref)
+assert.equal((await put('alice', freeHref, updatedEventIcs(got.text, draft({ ...slot, busy: true }), draft({ ...slot, busy: false })), { 'If-Match': got.etag })).status, 204)
+assert.equal(await busyAt(), true, 'shown as busy once changed')
+const freeEvent = (await report('alice', aliceCal)).find((e) => e.href === freeHref)!
+assert.equal(freeEvent.busy, true)
+// all-day toggled on an event without TRANSP: it stays as shown (busy), written explicitly
+const plain = vcalendar(['UID:p', 'DTSTAMP:20261001T000000Z', 'DTSTART:20261112T090000Z', 'DTEND:20261112T100000Z'])
+const toAllDay = updatedEventIcs(plain, draft({ allDay: true, start: new Date(2026, 10, 12), end: new Date(2026, 10, 13) }), draft({}))
+assert.match(toAllDay, /TRANSP:OPAQUE/)
+assert.doesNotMatch(updatedEventIcs(plain, draft({ title: 'x' }), draft({})), /TRANSP/, 'untouched: nothing written')
+console.log('ok 10 busy / free')
+
 // cleanup
-for (const h of [href, `${aliceCal}${bobUid}.ics`, daily, merged, series]) await call('alice', 'DELETE', h)
+for (const h of [href, `${aliceCal}${bobUid}.ics`, daily, merged, series, freeHref]) await call('alice', 'DELETE', h)
 await call('alice', 'DELETE', '/calshare/v1/calendars/def-calendar/shares/bob')
 console.log('all ok')
