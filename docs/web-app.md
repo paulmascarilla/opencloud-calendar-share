@@ -27,10 +27,15 @@ styling is in `src/calendar.css`.
 - **Visibility:** *Private* (default) or *Public* in the editor. People who see your availability see a public
   event's title and place instead of just *Busy* (never its description or guests). Stored as
   `X-OC-VISIBILITY:PUBLIC`, not `CLASS:PUBLIC`, which some CalDAV clients write on every event.
-- **Read-only cases:** shared calendars without write access open in a read-only dialog. Recurring events are
-  shown expanded; their text is edited for the whole series, and their dates are changed in a CalDAV client. An
-  occurrence changed on its own in a CalDAV client is edited alone; renaming the series also renames the changed
-  occurrences that still had the series' title.
+- **Read-only cases:** shared calendars without write access open in a read-only dialog.
+- **Repeating events:** *Repeat* in the editor: every day, every weekday, every week, month (same day, or same nth
+  weekday) or year, or a custom rule (every n days / weeks / months / years, on chosen weekdays), ending never, on a
+  date or after a number of times (RFC 5545 `RRULE`). A repeating timed event is stored in local time with its zone
+  (`TZID` + `VTIMEZONE` built from the browser's time zone), so it keeps its time of day across DST changes.
+  Editing an occurrence edits the series: moving it moves every occurrence by as much. Delete asks for *this
+  occurrence* (`EXDATE`) or *every occurrence*. An occurrence changed on its own in a CalDAV client is edited
+  alone; renaming the series also renames the changed occurrences that still had the series' title. A rule the
+  editor cannot show (`BYSETPOS`, several rules, …) is kept as it is, and the series' dates stay locked.
 - **Concurrent edits:** saving or dragging an event writes only the fields you changed, on top of the latest stored
   version, so changes made elsewhere in the meantime are kept. Deletes use `If-Match` ETags: a change made elsewhere
   is reported and the view reloads.

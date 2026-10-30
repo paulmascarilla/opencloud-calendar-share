@@ -50,6 +50,7 @@ Create `alice` and `bob` through the Graph API, then run the scripts with `OC=ht
 | `sidecar`: `go test -race ./...` | the whole sidecar against an in-memory Radicale and Graph: sharing, invitations, moves, time zones, CalDAV-client invitations, guest edits and proposals, catch-up scan, free/busy |
 | `test/e2e.sh` | calendar sharing through the proxy |
 | `test/invitations-e2e.sh` | invitations: delivery, answers, moves, time zones, CalDAV-client invitations, clients dropping markers (31 checks) |
+| `web-extension`: `pnpm test:unit` | repeat rules and time zones, no server (in Europe/Paris, across a DST change) |
 | `web-extension`: `pnpm test:integration` | iCalendar logic against the live server |
 | `web-extension/test/ui-*.mjs` | headless Chromium (playwright-core): calendar, editing edge cases, invitation dates, proposals, invitations, answer links, notifications, availability, design and auto-refresh |
 

@@ -10,6 +10,7 @@
     "build:w": "vite build --watch --mode development",
     "check:types": "vue-tsc --noEmit",
     "test:integration": "tsx test/ical-roundtrip.ts",
+    "test:unit": "TZ=Europe/Paris tsx test/repeat.ts",
     "test:ui": "node test/ui-smoke.mjs",
     "lint": "eslint ."
   },

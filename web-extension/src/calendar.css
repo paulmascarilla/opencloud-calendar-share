@@ -399,3 +399,9 @@
   font-size: 0.72rem;
   color: var(--oc-role-on-surface-variant);
 }
+
+/* destructive confirmations (delete every occurrence) */
+.danger-button {
+  background-color: var(--oc-role-error) !important;
+  color: var(--oc-role-on-error) !important;
+}

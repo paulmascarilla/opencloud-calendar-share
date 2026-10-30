@@ -50,19 +50,6 @@
           />
         </div>
 
-        <oc-notification-message
-          v-if="event?.recurring"
-          status="passive"
-          :title="$gettext('Recurring event')"
-          :message="
-            modifiedOccurrence
-              ? $gettext(
-                  'This occurrence was changed on its own: changes apply to it only. Dates can only be changed in a calendar app.'
-                )
-              : $gettext('Changes apply to the whole series. Dates can only be changed in a calendar app.')
-          "
-        />
-
         <oc-text-input
           id="event-title"
           v-model="title"
@@ -90,7 +77,7 @@
         <oc-checkbox
           v-model="allDay"
           :label="$gettext('All day')"
-          :disabled="readOnly || timesLocked"
+          :disabled="readOnly || timesLocked || (!!event?.recurring && !series?.modified)"
         />
 
         <div class="ext:grid ext:grid-cols-1 ext:sm:grid-cols-2 ext:gap-3">
@@ -118,6 +105,30 @@
         <p v-if="rangeInvalid" class="ext:m-0 ext:text-sm ext:text-role-error">
           {{ $gettext('The end must be after the start.') }}
         </p>
+
+        <p
+          v-if="event?.recurring && !readOnly"
+          class="ext:m-0 ext:inline-flex ext:items-center ext:gap-1.5 ext:text-xs ext:text-role-on-surface-variant"
+        >
+          <oc-icon :name="series?.modified ? 'repeat-one' : 'repeat'" size="xsmall" />
+          {{
+            series?.modified
+              ? $gettext('Changed on its own: edits apply to this occurrence only.')
+              : $gettext('Edits apply to every occurrence.')
+          }}
+        </p>
+        <template v-if="!series?.modified">
+          <p v-if="event?.recurring && !series" class="ext:m-0 ext:text-sm ext:text-role-on-surface-variant">
+            {{ $gettext('Loading how this event repeats…') }}
+          </p>
+          <p v-else-if="series && !series.editable" class="ext:m-0 ext:text-sm ext:text-role-on-surface-variant">
+            {{ $gettext('Repeats with a rule set in a calendar app. It is kept as it is.') }}
+          </p>
+          <p v-else-if="readOnly" class="ext:m-0 ext:text-sm ext:text-role-on-surface-variant">
+            {{ repeat ? summary(repeat, repeatAnchor) : '' }}
+          </p>
+          <repeat-picker v-else-if="!invitation" v-model="repeat" :anchor="repeatAnchor" :disabled="saving" />
+        </template>
 
         <div v-if="!readOnly" class="ext:flex ext:flex-col ext:gap-1">
           <div class="ext:flex ext:flex-wrap ext:items-center ext:gap-x-6 ext:gap-y-2">
@@ -184,7 +195,7 @@
         <div v-if="event && !readOnly" class="ext:flex ext:justify-start">
           <oc-button appearance="raw" class="ext:text-role-error" :disabled="saving" @click="emit('delete')">
             <oc-icon name="delete-bin" size="small" />
-            {{ event.recurring ? $gettext('Delete the whole series') : $gettext('Delete event') }}
+            {{ event.recurring ? $gettext('Delete…') : $gettext('Delete event') }}
           </oc-button>
         </div>
         <button type="submit" hidden />
@@ -198,6 +209,9 @@ import { computed, ref, watch } from 'vue'
 import { useGettext } from 'vue3-gettext'
 import { CalendarSource, EventDraft, EventInstance } from '../composables/useCaldav'
 import type { Guest, GuestResponse } from '../ical'
+import type { Repeat, SeriesInfo } from '../repeat'
+import { useRepeatText } from '../composables/useRepeatText'
+import RepeatPicker from './RepeatPicker.vue'
 import GuestList from './GuestList.vue'
 import ColorPicker from './ColorPicker.vue'
 import ProposeTime from './ProposeTime.vue'
@@ -213,8 +227,8 @@ const props = defineProps<{
   initial: EventDraft
   calendars: CalendarSource[]
   readOnly: boolean
-  /** A recurring occurrence changed on its own: edits apply to it alone */
-  modifiedOccurrence?: boolean
+  /** The stored series of a recurring event, once loaded (null until then, and for single events) */
+  series?: (SeriesInfo & { start: Date }) | null
   saving: boolean
   meId: string
   /** The event is the current user's own copy of an invitation */
@@ -232,6 +246,7 @@ const emit = defineEmits<{
 }>()
 
 const { $gettext } = useGettext()
+const { summary } = useRepeatText()
 
 const title = ref(props.initial.title)
 const calendar = ref(props.calendars.find((c) => c.href === props.initial.calendarHref) ?? props.calendars[0])
@@ -247,6 +262,13 @@ const proposing = ref(false)
 const color = ref<string | null>(props.initial.color)
 const busy = ref(props.initial.busy)
 const isPublic = ref(props.initial.public)
+const repeat = ref<Repeat | null>(props.series?.repeat ?? props.initial.repeat)
+watch(
+  () => props.series,
+  (series) => {
+    if (series) repeat.value = series.repeat
+  }
+)
 const visibilityOptions = computed(() => [
   { value: 'private' as const, label: $gettext('Private') },
   { value: 'public' as const, label: $gettext('Public') }
@@ -265,7 +287,8 @@ const showAsOptions = computed(() => [
 ])
 const otherGuests = computed(() => guests.value.filter((g) => g.id !== props.meId))
 
-const timesLocked = computed(() => !!props.event?.recurring)
+// A series' times can change once it is loaded (moving one occurrence moves them all), unless its rule is unknown.
+const timesLocked = computed(() => !!props.event?.recurring && (!props.series || (!props.series.modified && !props.series.editable)))
 const invitation = computed(() => props.canRespond)
 const myResponse = computed(() => props.event?.guests.find((g) => g.id === props.meId)?.response ?? 'pending')
 const guestsEditable = computed(
@@ -296,6 +319,12 @@ watch(allDay, (value) => {
 })
 
 const startDate = computed(() => fromInput(startInput.value, allDay.value))
+/** Presets are built from the series' start, moved as much as the user moved this occurrence. */
+const repeatAnchor = computed(() => {
+  const start = startDate.value ?? props.initial.start
+  if (!props.series) return start
+  return new Date(props.series.start.getTime() + (start.getTime() - props.initial.start.getTime()))
+})
 const endDate = computed(() => {
   const end = fromInput(endInput.value, allDay.value)
   if (end && allDay.value) end.setDate(end.getDate() + 1)
@@ -329,7 +358,9 @@ function save() {
     guests: guests.value,
     color: color.value,
     busy: busy.value,
-    public: isPublic.value
+    public: isPublic.value,
+    // A rule the editor cannot show is kept: the draft repeats it as stored.
+    repeat: props.series && !props.series.editable ? props.initial.repeat : repeat.value
   })
 }
 

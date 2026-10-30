@@ -1,6 +1,14 @@
 import { useClientService, useConfigStore, useUserStore } from '@opencloud-eu/web-pkg'
 import { unref } from 'vue'
-import { EventDraft, EventInstance, isModifiedOccurrence, newEventIcs, parseInstances, updatedEventIcs } from '../ical'
+import {
+  EventDraft,
+  EventInstance,
+  newEventIcs,
+  parseInstances,
+  seriesInfo,
+  updatedEventIcs,
+  withoutOccurrenceIcs
+} from '../ical'
 
 export type { EventDraft, EventInstance }
 
@@ -189,18 +197,28 @@ export function useCaldav() {
     }
   }
 
-  /** Whether this occurrence of a series was changed on its own (edits then apply to it alone). */
-  async function isModified(event: EventInstance) {
-    if (!event.recurrenceId) return false
+  /** How the event's series repeats, and whether this occurrence was changed on its own (edited alone). */
+  async function getSeries(event: EventInstance) {
     const { data } = await dav('GET', event.href)
-    return isModifiedOccurrence(data, event.recurrenceId)
+    return seriesInfo(data, event.recurrenceId)
+  }
+
+  /** Removes one occurrence of a series; the others stay. */
+  async function deleteOccurrence(event: EventInstance) {
+    if (!event.recurrenceId) throw new Error('not an occurrence')
+    const { data, headers } = await dav('GET', event.href)
+    const etag = headers.etag as string | undefined
+    await dav('PUT', event.href, withoutOccurrenceIcs(data, event.recurrenceId), {
+      'Content-Type': 'text/calendar; charset=utf-8',
+      ...(etag ? { 'If-Match': etag } : {})
+    })
   }
 
   async function deleteEvent(href: string, etag?: string) {
     await dav('DELETE', href, undefined, etag ? { 'If-Match': etag } : {})
   }
 
-  return { listCalendars, createCalendar, fetchEvents, getEvent, createEvent, updateEvent, isModified, deleteEvent }
+  return { listCalendars, createCalendar, fetchEvents, getEvent, createEvent, updateEvent, getSeries, deleteOccurrence, deleteEvent }
 }
 
 function xmlEscape(text: string) {
