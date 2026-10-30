@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -211,6 +212,22 @@ func (f *fakeRadicale) dav(method, user, path string, h http.Header, body []byte
 		return 207, f.homeListing(user), map[string]string{"Content-Type": "text/xml"}
 	case "REPORT":
 		return f.calendarQuery(real, body)
+	case "PROPPATCH":
+		c, exists := f.collections[real]
+		if !exists {
+			return 404, nil, nil
+		}
+		if !write {
+			return 403, nil, nil
+		}
+		if m := proppatchRE.FindStringSubmatch(string(body)); m != nil {
+			c.displayName = html.UnescapeString(m[1])
+		}
+		if m := colorPatchRE.FindStringSubmatch(string(body)); m != nil {
+			c.color = m[1]
+		}
+		return 207, []byte(`<?xml version="1.0"?><multistatus xmlns="DAV:"><response><href>` + path +
+			`</href><propstat><prop/><status>HTTP/1.1 200 OK</status></propstat></response></multistatus>`), nil
 	case "MKCALENDAR":
 		if _, exists := f.collections[real]; exists {
 			return 405, nil, nil
@@ -282,6 +299,11 @@ func (f *fakeRadicale) dav(method, user, path string, h http.Header, body []byte
 	return 405, nil, nil
 }
 
+var (
+	proppatchRE  = regexp.MustCompile(`<D:displayname>([^<]*)</D:displayname>`)
+	colorPatchRE = regexp.MustCompile(`<ICAL:calendar-color>([^<]*)</ICAL:calendar-color>`)
+)
+
 var timeRangeRE = regexp.MustCompile(`<C:time-range start="(\w+)" end="(\w+)"/>`)
 
 // calendarQuery answers a calendar-query REPORT with the events of collection overlapping its
@@ -338,6 +360,9 @@ func (f *fakeRadicale) homeListing(user string) []byte {
 			if dn := s.Properties["D:displayname"]; dn != "" {
 				c.displayName = dn
 			}
+			if color := s.Properties["ICAL:calendar-color"]; color != "" {
+				c.color = color
+			}
 			entries = append(entries, entry{s.PathOrToken, &c})
 		}
 	}
@@ -350,7 +375,7 @@ func (f *fakeRadicale) homeListing(user string) []byte {
 		if e.c.components != nil {
 			b.WriteString(`<C:calendar/>`)
 		}
-		fmt.Fprintf(&b, `</resourcetype><displayname>%s</displayname>`, e.c.displayName)
+		fmt.Fprintf(&b, `</resourcetype><displayname>%s</displayname>`, html.EscapeString(e.c.displayName))
 		if e.c.color != "" {
 			fmt.Fprintf(&b, `<ICAL:calendar-color>%s</ICAL:calendar-color>`, e.c.color)
 		}
@@ -432,7 +457,16 @@ func (f *fakeRadicale) sharing(w http.ResponseWriter, user, action string, body 
 				http.Error(w, "", http.StatusForbidden)
 				return
 			}
-			s.Permissions = req.Permissions
+			if req.Permissions != "" {
+				s.Permissions = req.Permissions
+			}
+			// Like Radicale: given properties replace those of the share, the others stay.
+			for k, v := range req.Properties {
+				if s.Properties == nil {
+					s.Properties = map[string]string{}
+				}
+				s.Properties[k] = v
+			}
 		case "delete":
 			for i, x := range f.shares {
 				if x == s {

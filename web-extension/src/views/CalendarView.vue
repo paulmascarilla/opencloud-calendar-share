@@ -16,6 +16,8 @@
         :max-people="MAX_PEOPLE"
         @toggle="toggleCalendar"
         @create="creatingCalendar = true"
+        @edit="(cal) => (editingCalendar = cal)"
+        @leave="leaveCalendar"
         @add-person="addingPerson = true"
         @remove-person="removePerson"
         @toggle-person="togglePerson"
@@ -115,6 +117,14 @@
       @close="creatingCalendar = false"
     />
 
+    <calendar-settings-modal
+      v-if="editingCalendar"
+      :calendar="editingCalendar"
+      @saved="onCalendarChanged"
+      @deleted="onCalendarDeleted(editingCalendar.href)"
+      @close="editingCalendar = null"
+    />
+
     <oc-modal
       v-if="confirmingDelete && editor?.event"
       :title="$gettext('Delete event')"
@@ -161,6 +171,7 @@ import { useInvitationsFeed } from '../invitationsFeed'
 import { dayHeaderContent, eventContent, eventDidMount, nowIndicatorContent } from '../calendarRender'
 import CalendarList from '../components/CalendarList.vue'
 import CalendarCreateModal from '../components/CalendarCreateModal.vue'
+import CalendarSettingsModal from '../components/CalendarSettingsModal.vue'
 import AddPersonModal from '../components/AddPersonModal.vue'
 import CalendarToolbar from '../components/CalendarToolbar.vue'
 import EventEditor from '../components/EventEditor.vue'
@@ -217,6 +228,7 @@ const freeBusyEnabled = ref(false)
 const saving = ref(false)
 const confirmingDelete = ref(false)
 const creatingCalendar = ref(false)
+const editingCalendar = ref<CalendarSource | null>(null)
 const header = reactive({ title: '', subtitle: '', view: '' })
 const editor = ref<{
   key: number
@@ -606,6 +618,38 @@ const { lastSync, syncing, failing, refreshNow } = useAutoRefresh(checkForChange
 async function onCalendarCreated() {
   creatingCalendar.value = false
   await refreshNow()
+}
+
+async function onCalendarChanged() {
+  editingCalendar.value = null
+  await refreshNow()
+}
+
+async function onCalendarDeleted(href: string) {
+  editingCalendar.value = null
+  if (hidden.value.includes(href)) {
+    hidden.value = hidden.value.filter((h) => h !== href)
+    writeStorage(HIDDEN_KEY, hidden.value)
+  }
+  await refreshNow()
+}
+
+/** Hides a calendar shared with the user, as declining it does; it can be accepted again from sharing. */
+async function leaveCalendar(calendar: CalendarSource) {
+  try {
+    await calshare.respond(calendar.id, false)
+    showMessage({
+      title: $gettext('“%{name}” removed from your calendars', { name: calendar.name }),
+      desc: $gettext('You can add it back from Manage sharing.')
+    })
+    await refreshNow()
+  } catch (error) {
+    showErrorMessage({
+      title: $gettext('Could not remove the calendar'),
+      desc: apiErrorMessage(error),
+      errors: [error as Error]
+    })
+  }
 }
 
 function toggleCalendar(href: string) {
