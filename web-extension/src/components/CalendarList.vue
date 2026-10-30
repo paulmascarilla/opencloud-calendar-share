@@ -10,7 +10,7 @@
         {{ group.empty }}
       </p>
       <ul class="ext:list-none ext:m-0 ext:p-0 ext:flex ext:flex-col ext:gap-1">
-        <li v-for="cal in group.items" :key="cal.href">
+        <li v-for="cal in group.items" :key="cal.href" class="with-action">
           <label
             class="calendar-row ext:flex ext:items-center ext:gap-2 ext:px-2 ext:py-1.5 ext:rounded ext:cursor-pointer"
           >
@@ -38,6 +38,28 @@
               class="ext:text-role-on-surface-variant"
             />
           </label>
+          <oc-button
+            v-if="owners[cal.href]"
+            appearance="raw"
+            size="small"
+            class="row-action"
+            :aria-label="$gettext('Remove %{name} from my calendars', { name: cal.name })"
+            :title="$gettext('Remove %{name} from my calendars', { name: cal.name })"
+            @click="emit('leave', cal)"
+          >
+            <oc-icon name="close" size="small" />
+          </oc-button>
+          <oc-button
+            v-else
+            appearance="raw"
+            size="small"
+            class="row-action"
+            :aria-label="$gettext('Settings of %{name}', { name: cal.name })"
+            :title="$gettext('Settings of %{name}', { name: cal.name })"
+            @click="emit('edit', cal)"
+          >
+            <oc-icon name="settings-3" size="small" />
+          </oc-button>
         </li>
       </ul>
     </section>
@@ -52,7 +74,7 @@
         {{ $gettext('See when colleagues are busy. You only see their busy times, and the events they made public.') }}
       </p>
       <ul class="ext:list-none ext:m-0 ext:p-0 ext:flex ext:flex-col ext:gap-1">
-        <li v-for="person in people" :key="person.id" class="person">
+        <li v-for="person in people" :key="person.id" class="with-action">
           <label
             class="calendar-row ext:flex ext:items-center ext:gap-2 ext:px-2 ext:py-1.5 ext:rounded ext:cursor-pointer"
           >
@@ -73,7 +95,7 @@
           <oc-button
             appearance="raw"
             size="small"
-            class="remove"
+            class="row-action"
             :aria-label="$gettext('Stop showing %{name}', { name: person.name })"
             :title="$gettext('Stop showing %{name}', { name: person.name })"
             @click="emit('removePerson', person.id)"
@@ -135,6 +157,7 @@ const emit = defineEmits<{
   (e: 'create'): void
   (e: 'addPerson'): void
   (e: 'removePerson' | 'togglePerson', id: string): void
+  (e: 'edit' | 'leave', calendar: CalendarSource): void
 }>()
 
 const { $gettext } = useGettext()
@@ -176,13 +199,13 @@ const groups = computed(() => [
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E")
     center / 0.8rem no-repeat;
 }
-.person {
+.with-action {
   position: relative;
 }
-.person .calendar-row {
+.with-action .calendar-row {
   padding-right: 2rem;
 }
-.remove {
+.row-action {
   position: absolute;
   top: 50%;
   right: 0.25rem;
@@ -190,13 +213,13 @@ const groups = computed(() => [
   opacity: 0;
   color: var(--oc-role-on-surface-variant);
 }
-.person:hover .remove,
-.remove:focus-visible {
+.with-action:hover .row-action,
+.row-action:focus-visible {
   opacity: 1;
 }
 /* touch screens have no hover: keep the button visible */
 @media (hover: none) {
-  .remove {
+  .row-action {
     opacity: 1;
   }
 }

@@ -11,6 +11,8 @@
 //	GET    /v1/calendars/{cal}/shares             who has access to {cal}
 //	PUT    /v1/calendars/{cal}/shares/{user}      share {cal} with {user}  body: {"permission": "read"|"write"}
 //	DELETE /v1/calendars/{cal}/shares/{user}      revoke
+//	PATCH  /v1/calendars/{cal}                    rename / recolor {cal}, its shares follow  body: {"displayName": "…", "color": "#RRGGBB"}
+//	DELETE /v1/calendars/{cal}                    delete {cal} and its shares
 //	GET    /v1/shares                             every share the caller owns
 //	GET    /v1/shared-with-me                     shares received by the caller
 //	POST   /v1/shared-with-me/{mount}/accept      show a received share in CalDAV clients
@@ -37,6 +39,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -53,8 +56,9 @@ import (
 )
 
 var (
-	nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$`)
-	uuidRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	nameRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$`)
+	colorRE = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	uuidRE  = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 	permissions = map[string]string{"read": "r", "write": "rw"}
 	// REST answer -> PARTSTAT
@@ -754,6 +758,124 @@ func (s *Server) deleteShare(owner, cal, who, authHeader string) error {
 	return err
 }
 
+// patchCalendar renames or recolors one of owner's calendars. Its shares follow, unless the recipient was given
+// another name or color than the one putShare derives from the calendar.
+func (s *Server) patchCalendar(owner, cal string, body map[string]any) (Obj, error) {
+	calendar, err := s.checkOwnCalendar(owner, cal)
+	if err != nil {
+		return nil, err
+	}
+	name, hasName := body["displayName"]
+	color, hasColor := body["color"]
+	if !hasName && !hasColor {
+		return nil, apiErr(400, "nothing to change: give displayName or color")
+	}
+	var props strings.Builder
+	newName, _ := name.(string)
+	newName = strings.TrimSpace(newName)
+	if hasName {
+		if newName == "" || len(newName) > 256 {
+			return nil, apiErr(400, "displayName must be a non-empty string of up to 256 bytes")
+		}
+		props.WriteString("<D:displayname>" + xmlText(newName) + "</D:displayname>")
+	}
+	newColor, _ := color.(string)
+	if hasColor {
+		if !colorRE.MatchString(newColor) {
+			return nil, apiErr(400, "color must be #RRGGBB")
+		}
+		props.WriteString("<ICAL:calendar-color>" + newColor + "</ICAL:calendar-color>")
+	}
+	status, data, err := s.http("PROPPATCH", s.cfg.RadicaleURL+"/"+owner+"/"+cal+"/",
+		map[string]string{s.cfg.RemoteUserHeader: owner, "Content-Type": "application/xml"},
+		[]byte(`<?xml version="1.0" encoding="utf-8"?><D:propertyupdate xmlns:D="DAV:" xmlns:ICAL="`+nsICal+`">`+
+			`<D:set><D:prop>`+props.String()+`</D:prop></D:set></D:propertyupdate>`))
+	if err != nil {
+		return nil, err
+	}
+	if status != 207 {
+		return nil, apiErr(502, "radicale PROPPATCH returned %d", status)
+	}
+	root, err := parseXML(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range root.iter(nsDAV, "status", nil) {
+		if !strings.Contains(st.Text, " 200 ") {
+			return nil, apiErr(502, "radicale PROPPATCH: %s", strings.TrimSpace(st.Text))
+		}
+	}
+
+	shares, err := s.listShares(owner)
+	if err != nil {
+		return nil, err
+	}
+	for _, sh := range shares {
+		if sh.str("Owner") != owner || sh.str("PathMapped") != "/"+owner+"/"+cal+"/" {
+			continue
+		}
+		current, _ := sh["Properties"].(map[string]any)
+		update := Obj{}
+		// "<name> (<owner's name>)" keeps its suffix; a name chosen when sharing is left alone.
+		if dn, _ := current["D:displayname"].(string); hasName && strings.HasPrefix(dn, calendar.DisplayName+" (") {
+			update = append(update, KV{"D:displayname", newName + dn[len(calendar.DisplayName):]})
+		}
+		if c, _ := current["ICAL:calendar-color"].(string); hasColor && (c == "" || c == calendar.Color) {
+			update = append(update, KV{"ICAL:calendar-color", newColor})
+		}
+		if len(update) == 0 {
+			continue
+		}
+		if _, err := s.radicaleSharing(owner, "update", Obj{{"PathOrToken", sh["PathOrToken"]},
+			{"Properties", update}}); err != nil {
+			return nil, err
+		}
+	}
+	if calendar, err = s.checkOwnCalendar(owner, cal); err != nil {
+		return nil, err
+	}
+	return calendar.view(), nil
+}
+
+// deleteCalendar deletes one of owner's calendars and its shares. The invitations agent then removes the guests'
+// copies of the invitations it held, and declines those it received (Agent.deleted).
+func (s *Server) deleteCalendar(owner, cal string) error {
+	// def-calendar receives invitations, and OpenCloud provisions the def-* collections again anyway.
+	if strings.HasPrefix(cal, "def-") {
+		return apiErr(403, "a default calendar cannot be deleted")
+	}
+	if _, err := s.checkOwnCalendar(owner, cal); err != nil {
+		return err
+	}
+	shares, err := s.listShares(owner)
+	if err != nil {
+		return err
+	}
+	// Shares first: if the delete then fails, the calendar is only unshared, never left with dangling mounts.
+	for _, sh := range shares {
+		if sh.str("Owner") == owner && sh.str("PathMapped") == "/"+owner+"/"+cal+"/" {
+			if _, err := s.radicaleSharing(owner, "delete", Obj{{"PathOrToken", sh["PathOrToken"]}}); err != nil {
+				return err
+			}
+		}
+	}
+	status, _, err := s.http("DELETE", s.cfg.RadicaleURL+"/"+owner+"/"+cal+"/",
+		map[string]string{s.cfg.RemoteUserHeader: owner}, nil)
+	if err != nil {
+		return err
+	}
+	if status != 200 && status != 204 {
+		return apiErr(502, "radicale DELETE returned %d", status)
+	}
+	return nil
+}
+
+func xmlText(text string) string {
+	var b strings.Builder
+	xml.EscapeText(&b, []byte(text)) //nolint:errcheck // a strings.Builder never fails
+	return b.String()
+}
+
 func (s *Server) respondIncoming(user, mount string, accept bool) (Obj, error) {
 	path := "/" + user + "/" + mount + "/"
 	shares, err := s.listShares(user)
@@ -869,7 +991,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Info(fmt.Sprintf("%s \"%s %s %s\" %d -", host, r.Method, r.RequestURI, r.Proto, rec.status))
 	}()
 	switch r.Method {
-	case "GET", "PUT", "POST", "DELETE":
+	case "GET", "PUT", "PATCH", "POST", "DELETE":
 	default:
 		http.Error(rec, "Unsupported method ("+quoteString(r.Method)+")", http.StatusNotImplemented)
 		return
@@ -956,6 +1078,15 @@ func (s *Server) route(r *http.Request) (any, int, error) {
 			}
 		}
 		return out, 200, nil
+	case is("PATCH", "calendars", "*"):
+		body, err := readBody(r)
+		if err != nil {
+			return nil, 0, err
+		}
+		view, err := s.patchCalendar(user, parts[1], body)
+		return view, 200, err
+	case is("DELETE", "calendars", "*"):
+		return nil, 204, s.deleteCalendar(user, parts[1])
 	case is("GET", "calendars", "*", "shares"):
 		cal := parts[1]
 		if _, err := s.checkOwnCalendar(user, cal); err != nil {

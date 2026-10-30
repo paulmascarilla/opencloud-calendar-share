@@ -26,6 +26,12 @@ export interface Share {
   updated: number
 }
 
+/** Paths of the invitations the user organizes, and of the copies they received. */
+export interface InvitationIndex {
+  organized: string[]
+  received: { copy: string; master: string }[]
+}
+
 /** An invitation the current user has not answered yet. */
 export interface PendingInvitation {
   calendar: string
@@ -76,6 +82,17 @@ export function useCalshare() {
   async function listCalendars() {
     const { data } = await clientService.httpAuthenticated.get<Calendar[]>(url('calendars'))
     return data
+  }
+
+  /** Renames or recolors one of the user's calendars; the people it is shared with see the change. */
+  async function updateCalendar(calendar: string, changes: { displayName?: string; color?: string }) {
+    const { data } = await clientService.httpAuthenticated.patch<Calendar>(url('calendars', calendar), changes)
+    return data
+  }
+
+  /** Deletes one of the user's calendars, its events and its shares. */
+  async function deleteCalendar(calendar: string) {
+    await clientService.httpAuthenticated.delete(url('calendars', calendar))
   }
 
   async function listOutgoing() {
@@ -139,6 +156,11 @@ export function useCalshare() {
     return data
   }
 
+  async function listInvitations() {
+    const { data } = await clientService.httpAuthenticated.get<InvitationIndex>(url('invitations'))
+    return data
+  }
+
   async function pendingInvitations() {
     const { data } = await clientService.httpAuthenticated.get<PendingInvitation[]>(url('invitations', 'pending'))
     return data
@@ -160,6 +182,8 @@ export function useCalshare() {
 
   return {
     listCalendars,
+    updateCalendar,
+    deleteCalendar,
     listOutgoing,
     listIncoming,
     share,
@@ -170,6 +194,7 @@ export function useCalshare() {
     propose,
     decideProposal,
     pendingInvitations,
+    listInvitations,
     freeBusy
   }
 }
