@@ -34,7 +34,7 @@ const aliceCal = `/caldav/${ALICE_ID}/def-calendar/`
 const draft = (over: Partial<EventDraft>): EventDraft => ({
   calendarHref: aliceCal, title: 'Déjeuner équipe', allDay: false,
   start: new Date('2026-10-22T10:00:00Z'), end: new Date('2026-10-22T11:30:00Z'),
-  location: 'Cantine', description: 'ligne 1\nligne 2, avec ; et \\', guests: [], color: null, busy: true, public: false, ...over })
+  location: 'Cantine', description: 'ligne 1\nligne 2, avec ; et \\', guests: [], color: null, busy: true, public: false, repeat: null, ...over })
 
 // 1. create a timed event
 const uid = `test-${Date.now()}`

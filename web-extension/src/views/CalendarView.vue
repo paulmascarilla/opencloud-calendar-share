@@ -90,7 +90,7 @@
       :initial="editor.initial"
       :calendars="writableCalendars"
       :read-only="editor.readOnly"
-      :modified-occurrence="editor.modifiedOccurrence"
+      :series="editor.series"
       :saving="saving"
       :me-id="meId"
       :can-respond="!!editor.event && isMyInvitation(editor.event)"
@@ -126,18 +126,37 @@
     />
 
     <oc-modal
-      v-if="confirmingDelete && editor?.event"
+      v-if="confirmingDelete && editor?.event && !editor.event.recurring"
       :title="$gettext('Delete event')"
-      :message="
-        editor.event.recurring
-          ? $gettext('Delete every occurrence of “%{title}”?', { title: editor.event.title })
-          : $gettext('Delete “%{title}”?', { title: editor.event.title })
-      "
+      :message="$gettext('Delete “%{title}”?', { title: editor.event.title })"
       :button-confirm-text="$gettext('Delete')"
       :is-loading="saving"
-      @confirm="deleteFromEditor"
+      @confirm="deleteFromEditor(false)"
       @cancel="confirmingDelete = false"
     />
+    <oc-modal
+      v-if="confirmingDelete && editor?.event?.recurring"
+      :title="$gettext('Delete “%{title}”?', { title: editor.event.title })"
+      hide-actions
+      @cancel="confirmingDelete = false"
+    >
+      <template #content>
+        <p class="ext:mt-0 ext:mb-4 ext:text-sm">
+          {{ $gettext('This event repeats. Delete only this occurrence, or every occurrence?') }}
+        </p>
+        <div class="ext:flex ext:flex-wrap ext:justify-end ext:gap-2">
+          <oc-button appearance="outline" :disabled="saving" @click="confirmingDelete = false">
+            {{ $gettext('Cancel') }}
+          </oc-button>
+          <oc-button appearance="outline" :disabled="saving" @click="deleteFromEditor(true)">
+            {{ $gettext('This occurrence') }}
+          </oc-button>
+          <oc-button appearance="filled" class="danger-button" :disabled="saving" @click="deleteFromEditor(false)">
+            {{ $gettext('Every occurrence') }}
+          </oc-button>
+        </div>
+      </template>
+    </oc-modal>
   </div>
 </template>
 
@@ -162,6 +181,7 @@ import frLocale from '@fullcalendar/core/locales/fr'
 import { useMessages, useRoute, useUserStore } from '@opencloud-eu/web-pkg'
 import { useGettext } from 'vue3-gettext'
 import { CalendarSource, ConflictError, EventDraft, EventInstance, useCaldav } from '../composables/useCaldav'
+import type { SeriesInfo } from '../repeat'
 import { apiErrorMessage, Availability, isFreeBusyDisabled, Share, useCalshare } from '../composables/useCalshare'
 import type { DirectoryUser } from '../composables/useUserDirectory'
 import type { WatchedPerson } from '../availability'
@@ -235,8 +255,8 @@ const editor = ref<{
   event: EventInstance | null
   initial: EventDraft
   readOnly: boolean
-  /** A recurring occurrence changed on its own: edits apply to it alone */
-  modifiedOccurrence: boolean
+  /** A recurring event's stored series (how it repeats, whether this occurrence was changed alone), once loaded */
+  series: (SeriesInfo & { start: Date }) | null
 } | null>(null)
 
 const meId = computed(() => userStore.user?.id ?? '')
@@ -675,12 +695,15 @@ function defaultCalendarHref() {
 function openEditor(event: EventInstance | null, initial: EventDraft, readOnly = false) {
   confirmingDelete.value = false
   const key = Date.now()
-  editor.value = { key, event, initial, readOnly, modifiedOccurrence: false }
+  editor.value = { key, event, initial, readOnly, series: null }
   if (event?.recurring) {
     caldav
-      .isModified(event)
-      .then((modified) => {
-        if (editor.value?.key === key) editor.value.modifiedOccurrence = modified
+      .getSeries(event)
+      .then((series) => {
+        if (editor.value?.key !== key) return
+        editor.value.series = series
+        // What the user changes is compared with the stored rule.
+        editor.value.initial = { ...editor.value.initial, repeat: series.repeat }
       })
       .catch(() => {})
   }
@@ -698,7 +721,8 @@ function emptyDraft(start: Date, end: Date, allDay: boolean): EventDraft {
     guests: [],
     color: null,
     busy: !allDay,
-    public: false
+    public: false,
+    repeat: null
   }
 }
 
@@ -714,7 +738,9 @@ function draftOf(instance: EventInstance, start: Date, end: Date, allDay: boolea
     guests: instance.guests,
     color: instance.color,
     busy: instance.busy,
-    public: instance.public
+    public: instance.public,
+    // Expanded occurrences carry no rule: loaded with the series when the editor opens.
+    repeat: null
   }
 }
 
@@ -863,12 +889,14 @@ function splitHref(href: string) {
   return { calendar, file }
 }
 
-async function deleteFromEditor() {
+/** Deletes the event, or only the opened occurrence of a series. */
+async function deleteFromEditor(occurrenceOnly: boolean) {
   const event = editor.value?.event
   if (!event) return
   saving.value = true
   try {
-    await caldav.deleteEvent(event.href, event.etag)
+    if (occurrenceOnly) await caldav.deleteOccurrence(event)
+    else await caldav.deleteEvent(event.href, event.etag)
     editor.value = null
     confirmingDelete.value = false
     showMessage({ title: $gettext('Event deleted') })

@@ -52,8 +52,6 @@
     "Proposal declined": "Proposition refusée",
     "Could not answer the proposal": "Impossible de répondre à la proposition",
     "Recurring, from %{when}": "Récurrent, à partir du %{when}",
-    "Changes apply to the whole series. Dates can only be changed in a calendar app.": "Les modifications s'appliquent à toute la série. Les dates ne peuvent être changées que dans une application d'agenda.",
-    "This occurrence was changed on its own: changes apply to it only. Dates can only be changed in a calendar app.": "Cette occurrence a été modifiée séparément : les modifications ne s'appliquent qu'à elle. Les dates ne peuvent être changées que dans une application d'agenda.",
     "Could not delete the event": "Impossible de supprimer l'événement",
     "Could not load events": "Impossible de charger les événements",
     "Could not load your calendars": "Impossible de charger vos agendas",
@@ -61,8 +59,6 @@
     "Could not save the event": "Impossible d'enregistrer l'événement",
     "Delete": "Supprimer",
     "Delete event": "Supprimer l'événement",
-    "Delete every occurrence of “%{title}”?": "Supprimer toutes les occurrences de « %{title} » ?",
-    "Delete the whole series": "Supprimer toute la série",
     "Delete “%{title}”?": "Supprimer « %{title} » ?",
     "Description": "Description",
     "Edit event": "Modifier l'événement",
@@ -77,7 +73,6 @@
     "No calendar yet.": "Aucun agenda pour l'instant.",
     "Nothing shared with you yet.": "Rien n'est encore partagé avec vous.",
     "Read only": "Lecture seule",
-    "Recurring event": "Événement récurrent",
     "Save": "Enregistrer",
     "Show calendars": "Afficher les agendas",
     "Start": "Début",
@@ -232,6 +227,88 @@
     "%{a}, %{b} and %{n} other person lose access.": [
       "%{a}, %{b} et %{n} autre personne n'y ont plus accès.",
       "%{a}, %{b} et %{n} autres personnes n'y ont plus accès."
-    ]
+    ],
+    "%{every} on %{days}": "%{every}, le %{days}",
+    "%{every} on %{nth}": "%{every}, %{nth}",
+    "%{every} on day %{n}": "%{every}, le %{n}",
+    "%{rule}, %{n} time": [
+      "%{rule}, %{n} fois",
+      "%{rule}, %{n} fois"
+    ],
+    "%{rule}, until %{date}": "%{rule}, jusqu'au %{date}",
+    "After a number of times": "Après un nombre de fois",
+    "Custom…": "Personnalisé…",
+    "Delete…": "Supprimer…",
+    "Does not repeat": "Ne se répète pas",
+    "Ends": "Se termine",
+    "Every": "Tous les",
+    "Every day": "Tous les jours",
+    "Every week": "Toutes les semaines",
+    "Every month": "Tous les mois",
+    "Every year": "Tous les ans",
+    "Every %{n} day": [
+      "Tous les %{n} jours",
+      "Tous les %{n} jours"
+    ],
+    "Every %{n} week": [
+      "Toutes les %{n} semaines",
+      "Toutes les %{n} semaines"
+    ],
+    "Every %{n} month": [
+      "Tous les %{n} mois",
+      "Tous les %{n} mois"
+    ],
+    "Every %{n} year": [
+      "Tous les %{n} ans",
+      "Tous les %{n} ans"
+    ],
+    "Every month on %{nth}": "Tous les mois, %{nth}",
+    "Every month on day %{n}": "Tous les mois, le %{n}",
+    "Every occurrence": "Toutes les occurrences",
+    "Every week on %{day}": "Toutes les semaines, le %{day}",
+    "Every weekday (Monday to Friday)": "Tous les jours ouvrés (du lundi au vendredi)",
+    "Every year on %{date}": "Tous les ans, le %{date}",
+    "Interval": "Intervalle",
+    "Last day": "Dernier jour",
+    "Loading how this event repeats…": "Chargement de la répétition…",
+    "Never": "Jamais",
+    "Number of times": "Nombre de fois",
+    "On %{nth}": "%{nth}",
+    "On a date": "À une date",
+    "On day %{n}": "Le %{n}",
+    "On these days": "Ces jours-là",
+    "Repeat": "Répéter",
+    "Repeats with a rule set in a calendar app. It is kept as it is.": "Se répète selon une règle définie dans une application d'agenda. Elle est conservée telle quelle.",
+    "The event moves to the first day you picked.": "L'événement est déplacé au premier jour choisi.",
+    "This event repeats. Delete only this occurrence, or every occurrence?": "Cet événement se répète. Supprimer seulement cette occurrence, ou toutes ?",
+    "This occurrence": "Cette occurrence",
+    "Unit": "Unité",
+    "day": [
+      "jour",
+      "jours"
+    ],
+    "week": [
+      "semaine",
+      "semaines"
+    ],
+    "month": [
+      "mois",
+      "mois"
+    ],
+    "year": [
+      "an",
+      "ans"
+    ],
+    "time": [
+      "fois",
+      "fois"
+    ],
+    "the first %{day}": "le premier %{day}",
+    "the second %{day}": "le deuxième %{day}",
+    "the third %{day}": "le troisième %{day}",
+    "the fourth %{day}": "le quatrième %{day}",
+    "the last %{day}": "le dernier %{day}",
+    "Changed on its own: edits apply to this occurrence only.": "Modifiée séparément : les changements ne s'appliquent qu'à cette occurrence.",
+    "Edits apply to every occurrence.": "Les changements s'appliquent à toutes les occurrences."
   }
 }

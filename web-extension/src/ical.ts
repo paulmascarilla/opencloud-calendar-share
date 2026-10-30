@@ -1,5 +1,7 @@
 // Pure iCalendar helpers (no OpenCloud dependency), unit-testable under Node.
 import ICAL from 'ical.js'
+import { parseRepeat, Repeat, sameRepeat, SeriesInfo, toRecur, WEEKDAYS } from './repeat'
+import { localZone, vtimezone } from './timezone'
 
 export type GuestResponse = 'pending' | 'accepted' | 'tentative' | 'declined'
 
@@ -63,6 +65,8 @@ export interface EventDraft {
   color: string | null
   busy: boolean
   public: boolean
+  /** How the event repeats (whole series), null for a single event */
+  repeat: Repeat | null
 }
 
 /** Turns one calendar-data payload (expanded by the server) into displayable occurrences. */
@@ -201,6 +205,7 @@ export function newEventIcs(draft: EventDraft, uid: string) {
   setTime(vevent, 'dtend', toIcalTime(draft.end, draft.allDay))
   vevent.updatePropertyWithValue('transp', draft.busy ? 'OPAQUE' : 'TRANSPARENT')
   setPublic(vevent, draft.public)
+  if (draft.repeat) setRepeat(vcalendar, vevent, draft.repeat)
   return vcalendar.toString()
 }
 
@@ -216,7 +221,8 @@ const TEXTS = [
  * Fields the user left alone keep the stored values, which may have changed elsewhere in the meantime.
  *
  * For a recurring event, ``recurrenceId`` is the occurrence the user edited: an occurrence changed on its own
- * (its own VEVENT) is edited alone; otherwise the series' texts change, and its times never do.
+ * (its own VEVENT) is edited alone. Otherwise the whole series changes: moving the occurrence moves every
+ * occurrence by as much, and ``draft.repeat`` replaces the rule.
  */
 export function updatedEventIcs(ics: string, draft: EventDraft, base: EventDraft, recurrenceId: string | null = null) {
   const vcalendar = new ICAL.Component(ICAL.parse(ics))
@@ -242,14 +248,25 @@ export function updatedEventIcs(ics: string, draft: EventDraft, base: EventDraft
     draft.allDay !== base.allDay ||
     draft.start.getTime() !== base.start.getTime() ||
     draft.end.getTime() !== base.end.getTime()
-  if (timesChanged && !recurrenceId) {
+  if (timesChanged && (!recurrenceId || override)) {
     target.removeAllProperties('duration')
     setTime(target, 'dtstart', toIcalTime(draft.start, draft.allDay))
     setTime(target, 'dtend', toIcalTime(draft.end, draft.allDay))
+  } else if (timesChanged && target === master) {
+    shiftSeries(vevents, master, draft, base)
+  }
+  if (target === master && !sameRepeat(draft.repeat, base.repeat)) {
+    if (draft.repeat) {
+      setRepeat(vcalendar, master, draft.repeat)
+    } else {
+      // A single event again: its first occurrence stays, the others and their own changes go.
+      for (const name of ['rrule', 'rdate', 'exdate']) master.removeAllProperties(name)
+      vevents.filter((v) => v !== master).forEach((v) => vcalendar.removeSubcomponent(v))
+    }
   }
 
   // Busy / free, written when changed, or kept as shown when the default changes (all-day toggled without TRANSP).
-  if (draft.busy !== base.busy || (timesChanged && !recurrenceId && draft.allDay !== base.allDay && !target.hasProperty('transp'))) {
+  if (draft.busy !== base.busy || (timesChanged && draft.allDay !== base.allDay && !target.hasProperty('transp'))) {
     const transp = draft.busy ? 'OPAQUE' : 'TRANSPARENT'
     if (target === master) {
       for (const occurrence of vevents.filter((v) => v !== master)) {
@@ -282,6 +299,132 @@ export function isModifiedOccurrence(ics: string, recurrenceId: string) {
   return vcalendar.getAllSubcomponents('vevent').some((v) => occurrenceId(v) === recurrenceId)
 }
 
+/** How the stored series repeats, and whether this occurrence was changed on its own. */
+export function seriesInfo(ics: string, recurrenceId: string | null): SeriesInfo & { start: Date; allDay: boolean } {
+  const vcalendar = new ICAL.Component(ICAL.parse(ics))
+  registerTimezones(vcalendar)
+  const vevents = vcalendar.getAllSubcomponents('vevent')
+  const master = vevents.find((v) => !v.hasProperty('recurrence-id')) ?? vevents[0]
+  const start = master.getFirstPropertyValue('dtstart') as ICAL.Time
+  const { repeat, editable } = parseRepeat(master, start)
+  return {
+    modified: !!recurrenceId && vevents.some((v) => occurrenceId(v) === recurrenceId),
+    repeat,
+    editable,
+    start: start.isDate ? new Date(start.year, start.month - 1, start.day) : start.toJSDate(),
+    allDay: start.isDate
+  }
+}
+
+/** Removes one occurrence of a series (EXDATE), with its own changes if it had any. */
+export function withoutOccurrenceIcs(ics: string, recurrenceId: string) {
+  const vcalendar = new ICAL.Component(ICAL.parse(withDateRecurrenceIds(ics)))
+  registerTimezones(vcalendar)
+  const vevents = vcalendar.getAllSubcomponents('vevent')
+  const master = vevents.find((v) => !v.hasProperty('recurrence-id'))
+  if (!master) throw new Error('no master VEVENT')
+  vevents.filter((v) => occurrenceId(v) === recurrenceId).forEach((v) => vcalendar.removeSubcomponent(v))
+  // EXDATE in the form of DTSTART: date, or date-time in its zone.
+  const start = master.getFirstPropertyValue('dtstart') as ICAL.Time
+  let time: ICAL.Time
+  if (start.isDate) {
+    const [y, m, d] = recurrenceId.split('-').map(Number)
+    time = ICAL.Time.fromData({ year: y, month: m, day: d, isDate: true })
+  } else {
+    time = ICAL.Time.fromJSDate(new Date(recurrenceId), true)
+    if (start.zone && start.zone !== ICAL.Timezone.utcTimezone) time = time.convertToZone(start.zone)
+  }
+  const prop = new ICAL.Property('exdate', master)
+  prop.resetType(time.isDate ? 'date' : 'date-time')
+  prop.setValue(time)
+  const tzid = zoneId(time)
+  if (tzid) prop.setParameter('tzid', tzid)
+  master.addProperty(prop)
+  const sequence = Number(master.getFirstPropertyValue('sequence') ?? -1)
+  master.updatePropertyWithValue('sequence', sequence + 1)
+  master.updatePropertyWithValue('dtstamp', ICAL.Time.now())
+  return vcalendar.toString()
+}
+
+/**
+ * Moves a whole series by as much as the user moved one of its occurrences, and gives it the new duration.
+ * Its exceptions (EXDATE, occurrences changed on their own) keep pointing at the same occurrences.
+ */
+function shiftSeries(vevents: ICAL.Component[], master: ICAL.Component, draft: EventDraft, base: EventDraft) {
+  const start = master.getFirstPropertyValue('dtstart') as ICAL.Time
+  const delta = draft.start.getTime() - base.start.getTime()
+  const shift = (time: ICAL.Time) => {
+    const moved = time.clone()
+    if (moved.isDate) moved.adjust(Math.round(delta / 86_400_000), 0, 0, 0)
+    else moved.adjust(0, 0, 0, Math.round(delta / 1000))
+    return moved
+  }
+  const newStart = shift(start)
+  const newEnd = newStart.clone()
+  const duration = draft.end.getTime() - draft.start.getTime()
+  if (newEnd.isDate) newEnd.adjust(Math.round(duration / 86_400_000), 0, 0, 0)
+  else newEnd.adjust(0, 0, 0, Math.round(duration / 1000))
+  master.removeAllProperties('duration')
+  setTime(master, 'dtstart', newStart)
+  setTime(master, 'dtend', newEnd)
+  if (!delta) return
+  for (const prop of master.getAllProperties('exdate')) {
+    prop.setValues((prop.getValues() as ICAL.Time[]).map(shift))
+  }
+  for (const occurrence of vevents.filter((v) => v !== master)) {
+    const prop = occurrence.getFirstProperty('recurrence-id')
+    if (prop) prop.setValue(shift(prop.getFirstValue() as ICAL.Time))
+  }
+}
+
+/**
+ * Writes the RRULE. A timed series moves to local time in the browser's zone (TZID + VTIMEZONE) if it was in UTC,
+ * so that it keeps its time of day across DST changes.
+ */
+function setRepeat(vcalendar: ICAL.Component, vevent: ICAL.Component, repeat: Repeat) {
+  let start = vevent.getFirstPropertyValue('dtstart') as ICAL.Time
+  if (!start.isDate && (!start.zone || start.zone === ICAL.Timezone.utcTimezone)) {
+    const zone = localZone()
+    let vtz = vcalendar.getAllSubcomponents('vtimezone').find((c) => c.getFirstPropertyValue('tzid') === zone)
+    if (!vtz) {
+      vtz = vtimezone(zone, start.year)
+      vcalendar.addSubcomponent(vtz)
+    }
+    const tz = new ICAL.Timezone(vtz)
+    if (!ICAL.TimezoneService.has(zone)) ICAL.TimezoneService.register(vtz)
+    for (const name of ['dtstart', 'dtend']) {
+      const time = vevent.getFirstPropertyValue(name) as ICAL.Time | null
+      if (time) setTime(vevent, name, time.convertToZone(tz))
+    }
+    start = vevent.getFirstPropertyValue('dtstart') as ICAL.Time
+  }
+  // A weekly series on days that leave out its start begins on the first of them: calendar apps disagree on
+  // whether such a start counts as an occurrence.
+  if (repeat.freq === 'WEEKLY' && repeat.weekdays.length) {
+    let skip = 0
+    while (skip < 7 && !repeat.weekdays.includes(WEEKDAYS[(start.dayOfWeek() - 1 + skip) % 7])) skip++
+    if (skip > 0 && skip < 7) {
+      for (const name of ['dtstart', 'dtend']) {
+        const time = (vevent.getFirstPropertyValue(name) as ICAL.Time | null)?.clone()
+        if (!time) continue
+        time.adjust(skip, 0, 0, 0)
+        setTime(vevent, name, time)
+      }
+      start = vevent.getFirstPropertyValue('dtstart') as ICAL.Time
+    }
+  }
+  vevent.removeAllProperties('rrule')
+  vevent.removeAllProperties('rdate')
+  const startDate = start.isDate ? new Date(start.year, start.month - 1, start.day) : start.toJSDate()
+  vevent.addPropertyWithValue('rrule', toRecur(repeat, startDate, start.isDate))
+}
+
+/** TZID to write next to a local time, or null for UTC / floating / date values. */
+function zoneId(time: ICAL.Time) {
+  const tzid = time.zone?.tzid
+  return !time.isDate && tzid && tzid !== 'UTC' && tzid !== 'Z' && tzid !== 'floating' ? tzid : null
+}
+
 function text(vevent: ICAL.Component, name: string) {
   return String(vevent.getFirstPropertyValue(name) ?? '')
 }
@@ -300,6 +443,8 @@ function setTime(vevent: ICAL.Component, name: string, time: ICAL.Time) {
   const prop = new ICAL.Property(name, vevent)
   prop.resetType(time.isDate ? 'date' : 'date-time')
   prop.setValue(time)
+  const tzid = zoneId(time)
+  if (tzid) prop.setParameter('tzid', tzid)
   vevent.addProperty(prop)
 }
 
