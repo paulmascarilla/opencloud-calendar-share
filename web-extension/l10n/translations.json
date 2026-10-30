@@ -190,6 +190,44 @@
     "People who see your availability also see the title and place of this event.": "Les personnes qui consultent vos disponibilités voient aussi le titre et le lieu de cet événement.",
     "People who see your availability only see that you are busy.": "Les personnes qui consultent vos disponibilités voient seulement que vous n'êtes pas disponible.",
     "See when colleagues are busy. You only see their busy times, and the events they made public.": "Voyez les disponibilités de vos collègues : seulement leurs créneaux occupés, et les événements qu'ils ont rendus publics.",
+    "Calendar settings": "Paramètres de l'agenda",
+    "Shared with %{n} person: they see the new name and color.": [
+      "Partagé avec %{n} personne : elle verra le nouveau nom et la nouvelle couleur.",
+      "Partagé avec %{n} personnes : elles verront le nouveau nom et la nouvelle couleur."
+    ],
+    "Your default calendar cannot be deleted": "Votre agenda par défaut ne peut pas être supprimé",
+    "Delete calendar": "Supprimer l'agenda",
+    "This cannot be undone.": "Cette action est irréversible.",
+    "Calendar “%{name}” saved": "Agenda « %{name} » enregistré",
+    "Could not save the calendar": "Impossible d'enregistrer l'agenda",
+    "Calendar “%{name}” deleted": "Agenda « %{name} » supprimé",
+    "Could not delete the calendar": "Impossible de supprimer l'agenda",
+    "Remove %{name} from my calendars": "Retirer %{name} de mes agendas",
+    "Settings of %{name}": "Paramètres de %{name}",
+    "“%{name}” removed from your calendars": "« %{name} » retiré de vos agendas",
+    "You can add it back from Manage sharing.": "Vous pouvez le rajouter depuis Gérer le partage.",
+    "Could not remove the calendar": "Impossible de retirer l'agenda",
+    "Delete “%{name}”?": "Supprimer « %{name} » ?",
+    "You organized %{n} event in it: it disappears from your guests' calendars.": [
+      "Vous y organisez %{n} événement : il disparaît des agendas de vos invités.",
+      "Vous y organisez %{n} événements : ils disparaissent des agendas de vos invités."
+    ],
+    "%{n} invitation you received is in it: it is declined.": [
+      "%{n} invitation reçue s'y trouve : elle est refusée.",
+      "%{n} invitations reçues s'y trouvent : elles sont refusées."
+    ],
+    "It has no events.": "Il ne contient aucun événement.",
+    "Its events are deleted, here and in your CalDAV apps.": "Ses événements sont supprimés, ici et dans vos applications CalDAV.",
+    "Its %{n} event is deleted, here and in your CalDAV apps.": [
+      "Son événement est supprimé, ici et dans vos applications CalDAV.",
+      "Ses %{n} événements sont supprimés, ici et dans vos applications CalDAV."
+    ],
+    "%{name} loses access.": "%{name} n'y a plus accès.",
+    "%{a} and %{b} lose access.": "%{a} et %{b} n'y ont plus accès.",
+    "%{a}, %{b} and %{n} other person lose access.": [
+      "%{a}, %{b} et %{n} autre personne n'y ont plus accès.",
+      "%{a}, %{b} et %{n} autres personnes n'y ont plus accès."
+    ],
     "%{every} on %{days}": "%{every}, le %{days}",
     "%{every} on %{nth}": "%{every}, %{nth}",
     "%{every} on day %{n}": "%{every}, le %{n}",

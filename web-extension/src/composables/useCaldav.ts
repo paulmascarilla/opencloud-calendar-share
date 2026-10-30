@@ -185,6 +185,17 @@ export function useCaldav() {
     return href
   }
 
+  /** How many events (stored objects, a series counts once) a calendar holds. */
+  async function countEvents(href: string) {
+    const { data } = await dav(
+      'PROPFIND',
+      href,
+      `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:getetag/></D:prop></D:propfind>`,
+      { Depth: '1' }
+    )
+    return responses(data).filter((r) => decodeURIComponent(text(r, DAV_NS, 'href')) !== href).length
+  }
+
   /** One stored event (master occurrence), or null if it does not exist. */
   async function getEvent(href: string): Promise<EventInstance | null> {
     try {
@@ -218,7 +229,18 @@ export function useCaldav() {
     await dav('DELETE', href, undefined, etag ? { 'If-Match': etag } : {})
   }
 
-  return { listCalendars, createCalendar, fetchEvents, getEvent, createEvent, updateEvent, getSeries, deleteOccurrence, deleteEvent }
+  return {
+    listCalendars,
+    createCalendar,
+    countEvents,
+    fetchEvents,
+    getEvent,
+    createEvent,
+    updateEvent,
+    getSeries,
+    deleteOccurrence,
+    deleteEvent
+  }
 }
 
 function xmlEscape(text: string) {

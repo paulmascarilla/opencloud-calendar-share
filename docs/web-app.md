@@ -11,6 +11,10 @@ styling is in `src/calendar.css`.
   selector and *New event*.
 - **Views:** month / week / day / list. The sidebar shows or hides each calendar (own and shared, remembered per
   browser), creates calendars (*New calendar*: name + color) and links to sharing.
+- **Calendar settings:** the gear next to one of your calendars renames it, changes its color (people it is shared
+  with see the change) or deletes it, after a confirmation. Your default calendar cannot be deleted: invitations
+  arrive in it. The × next to a calendar shared with you removes it from your calendars (it is declined, and can be
+  accepted again from *Manage sharing*).
 - **Editing:** click or drag over empty space to create an event; click an event to edit or delete it; drag and
   resize to move it, or move it to another calendar from the editor (including a calendar shared with write access).
   New events go to the calendar used last, else to the default calendar.
