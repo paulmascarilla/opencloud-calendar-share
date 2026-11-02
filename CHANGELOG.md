@@ -2,6 +2,13 @@
 
 Generated from the Conventional Commits by the `tag` workflow (`.github/workflows/tag.yaml`).
 
+## [0.5.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.4.0...v0.5.0) (2026-11-02)
+
+### Features
+
+- **web:** repeating events (#11) ([99f70e0](https://github.com/paulmascarilla/opencloud-calendar-share/commit/99f70e0d7dc74b50bc4dbef10a1034570e19fe52))
+- rename, recolor and delete calendars (#10) ([6f9120a](https://github.com/paulmascarilla/opencloud-calendar-share/commit/6f9120a125c7be07324d330f7db2eb0e1ce5f7d9))
+
 ## [0.4.0](https://github.com/paulmascarilla/opencloud-calendar-share/compare/v0.3.0...v0.4.0) (2026-10-21)
 
 ### Features
